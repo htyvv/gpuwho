@@ -35,7 +35,7 @@ gpuwho
 
 ## 설치
 
-gpuwho을 실행할 컴퓨터에는 Python 3.9 이상(Linux 또는 macOS)과 서버로 가는 SSH만 있으면 됩니다.
+gpuwho를 실행할 컴퓨터에는 Python 3.9 이상(Linux 또는 macOS)과 서버로 가는 SSH만 있으면 됩니다.
 서버 쪽은 Linux, NVIDIA 드라이버, 그리고 3.6 이상의 아무 `python3`면 충분합니다.
 
 ```sh
@@ -84,14 +84,14 @@ gpuwho once --json | jq -r 'to_entries[] | .key as $s | .value.gpus[]?
 - GPU 정보는 `nvidia-smi`가 쓰는 라이브러리인 NVML을 `ctypes`로 직접 읽습니다. `nvidia-smi`를 실행하거나 그 출력을 파싱하지 않습니다.
 - 프로세스 주인은 `/proc`에서, 컨테이너는 `/proc/PID/cgroup`에서 알아냅니다 (Docker, containerd, Podman, CRI-O).
 - 사용자별 RAM은 RSS를 더한 값이 아니라, 커널이 그 사용자의 cgroup에 청구한 메모리(익명 + 공유 메모리)입니다. RSS를 더하면 fork된 DataLoader 워커들이 부모와 공유하는 페이지가 워커 수만큼 중복으로 더해집니다. 우리 서버 한 대에서는 실제 220 GB를 쓰는 사용자가 1.4 TB로 나왔습니다. cgroup 메모리 정보를 읽을 수 없는 서버에서는 RSS 합으로 돌아갑니다.
-- 에이전트는 표준 라이브러리만 쓰고 Python 3.6부터 돌아갑니다. CI에서 gpuwho이 실제로 보내는 명령 그대로 3.6, 3.7, 3.8에서 확인합니다.
+- 에이전트는 표준 라이브러리만 쓰고 Python 3.6부터 돌아갑니다. CI에서 gpuwho가 실제로 보내는 명령 그대로 3.6, 3.7, 3.8에서 확인합니다.
 - 내 계정 권한으로 돌고 root가 필요 없습니다. SSH 세션이 끊기거나, 90초 동안 요청이 없거나, 6시간이 지나면 스스로 종료합니다.
 - 프로세스 1,700개, GPU 8장인 서버에서 한 번 갱신에 CPU 약 70 ms를 씁니다. 기본 3초 간격이면 코어 하나의 2% 정도입니다.
 - NVIDIA 드라이버가 멈추면 NVML 호출은 15초 뒤에 포기하고, 그 서버의 CPU와 RAM은 계속 보여줍니다.
 
 ## 왜 만들었나
 
-우리 연구실에는 GPU 서버가 여러 대 있고 홈 디렉터리는 하나를 공유합니다. 빈 GPU를 찾으려면 서버마다 `ssh` 들어가서 `nvidia-smi`를 치고, PID 812345가 누구 건지 `ps`로 다시 찾아야 했습니다. gpuwho은 그 일을 모든 서버에 대해 3초마다, 창 하나에서 대신 해줍니다.
+우리 연구실에는 GPU 서버가 여러 대 있고 홈 디렉터리는 하나를 공유합니다. 빈 GPU를 찾으려면 서버마다 `ssh` 들어가서 `nvidia-smi`를 치고, PID 812345가 누구 건지 `ps`로 다시 찾아야 했습니다. gpuwho는 그 일을 모든 서버에 대해 3초마다, 창 하나에서 대신 해줍니다.
 
 ## 다른 도구와 비교
 
@@ -112,9 +112,9 @@ gpuwho once --json | jq -r 'to_entries[] | .key as $s | .value.gpus[]?
 이럴 땐 다른 도구가 낫습니다.
 
 - 서버 한 대에서 프로세스를 죽이고, 트리로 보고, 지난 그래프를 보고 싶다면 **nvitop**.
-- AMD, Intel, Apple 등 다른 가속기가 있다면 **nvtop**이나 **all-smi**. gpuwho은 NVIDIA 전용입니다.
+- AMD, Intel, Apple 등 다른 가속기가 있다면 **nvtop**이나 **all-smi**. gpuwho는 NVIDIA 전용입니다.
 - 노드가 아주 많고 NVLink 토폴로지, 기록, 알림이 필요하다면 **all-smi**.
-- 기록, 알림, Kubernetes가 필요하다면 **DCGM exporter**와 Prometheus, Grafana 또는 Netdata. gpuwho은 아무것도 저장하지 않고 지금 상태만 보여줍니다.
+- 기록, 알림, Kubernetes가 필요하다면 **DCGM exporter**와 Prometheus, Grafana 또는 Netdata. gpuwho는 아무것도 저장하지 않고 지금 상태만 보여줍니다.
 - 터미널 대신 웹 페이지로 보고 싶다면 **gpustat-web**이나 **gpuview**.
 
 ## 자주 묻는 것
@@ -126,7 +126,7 @@ gpuwho once --json | jq -r 'to_entries[] | .key as $s | .value.gpus[]?
 아직 안 읽습니다. `gpuwho add`에 실제 호스트와 `-u`, `-P`, `--key`를 넘겨 주세요. `ProxyJump`로 거쳐 가는 접속도 아직 안 됩니다.
 
 **비밀번호를 저장해도 안전한가요?**
-`~/.config/gpuwho/servers.json`에 평문으로 저장되고, gpuwho이 시작할 때마다 이 파일 권한을 0600으로 맞춥니다. 가능하면 SSH 키를 쓰세요. [SECURITY.md](SECURITY.md)에 자세히 있습니다.
+`~/.config/gpuwho/servers.json`에 평문으로 저장되고, gpuwho가 시작할 때마다 이 파일 권한을 0600으로 맞춥니다. 가능하면 SSH 키를 쓰세요. [SECURITY.md](SECURITY.md)에 자세히 있습니다.
 
 **Windows에서 되나요?**
 그대로는 안 되고, WSL 안에서는 잘 됩니다.
@@ -140,7 +140,7 @@ gpuwho once --json | jq -r 'to_entries[] | .key as $s | .value.gpus[]?
 비대화형 셸의 PATH에 `python3`가 없습니다. 설치하거나, `~/.bashrc`가 비대화형 셸에서 일찍 return 하기 전에 PATH를 설정하도록 고치세요.
 
 **`BadHostKeyException: Host key for server ... does not match`**
-gpuwho이 처음 본 뒤로 서버의 호스트 키가 바뀌었습니다. 재설치처럼 이유를 안다면 `~/.config/gpuwho/known_hosts`에서 그 줄을 지우세요.
+gpuwho가 처음 본 뒤로 서버의 호스트 키가 바뀌었습니다. 재설치처럼 이유를 안다면 `~/.config/gpuwho/known_hosts`에서 그 줄을 지우세요.
 
 **사용자 칸에 `?`가 나와요**
 그 서버의 `/proc`가 `hidepid` 옵션으로 마운트되어 있어서 다른 사람의 프로세스가 보이지 않는 겁니다.

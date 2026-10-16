@@ -89,3 +89,43 @@ def test_helpers():
     assert len(ui.bar(42, 10).plain) == 10
     assert ui.pretty_cmd("/usr/bin/python3 train.py").plain == "python3 train.py"
     assert ui.proc_owner({"user": "root", "container": "3f9c2a1b4d5e"}) == "root@3f9c2a"
+
+
+def test_unknown_memory_is_not_idle():
+    assert not ui.gpu_is_idle({"procs": [], "mem_used": None, "util": None})
+
+
+def test_mig_label():
+    assert ui.gpu_label({"name": "NVIDIA A100-SXM4-80GB", "mig": [{}, {}, {}]}) == "A100-SXM4-80GB MIG×3"
+    assert ui.gpu_label({"name": "NVIDIA A100-SXM4-80GB", "mig": None}) == "A100-SXM4-80GB"
+
+
+def test_owner_text_explains_missing_owner():
+    assert ui.owner_text({"user": None, "state": "gone"}).plain == "? (gone)"
+    assert ui.owner_text({"user": "root", "container": "3f9c2a1b4d5e"}).plain == "root@3f9c2a"
+
+
+def test_narrow_panel_keeps_the_users_column(cluster):
+    node01 = next(s for s in cluster if s.name == "node01")
+    text = render(ui.server_panel(node01, 3, False, 70), width=76)
+    assert "Users" in text and "alice" in text and "Power" not in text
+    wide = render(ui.server_panel(node01, 3, False, 120), width=126)
+    assert "Power" in wide and "Fan" in wide
+
+
+def test_compact_view(cluster):
+    text = render(ui.dashboard(cluster, 3, False, 120, compact=True), width=120)
+    assert "Who (GPUs)" in text and "dave×4" in text and "3,4" in text
+    assert "✗" in text  # node03's lost GPU in the strip
+    assert len(text.splitlines()) < 30
+
+
+def test_short_header(cluster):
+    assert ui.header(cluster, 3, short=True).plain.startswith(" gpuwho  4/4 up · 20 GPUs · 7 idle")
+
+
+def test_retry_note():
+    s = FakeServer("x", "h", error="auth failed: Authentication failed.")
+    s.blocked = True
+    assert "press r" in ui.retry_note(s, 3)
+    assert ui.retry_note(s, 0) == ""  # `once` has no keys to press

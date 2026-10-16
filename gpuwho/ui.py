@@ -1,4 +1,5 @@
-"""Turning agent snapshots into rich renderables: one panel per server plus a per-user summary."""
+"""Turning agent snapshots into rich renderables: one panel per server (or one line per server
+in the compact view) plus a per-user summary across all of them."""
 import os
 import time
 import zlib
@@ -60,6 +61,14 @@ def proc_owner(p):
     return (p.get("user") or "?") + ("@" + p["container"][:6] if p.get("container") else "")
 
 
+def owner_text(p):
+    """Owner of a GPU process, saying why when the agent couldn't tell (gone, zombie, hidden)."""
+    t = user_text(p.get("user"), "@" + p["container"][:6] if p.get("container") else "")
+    if p.get("state"):
+        t.append(" (%s)" % p["state"], style="dim red" if p["state"] in ("gone", "zombie") else "dim")
+    return t
+
+
 def is_display_proc(p):
     """A display server (Xorg, gnome-shell) parked on the GPU: graphics-only and a few MiB."""
     return p.get("type") == "G" and (p.get("mem") or 0) < 64
@@ -70,9 +79,16 @@ def busy_procs(g):
 
 
 def gpu_is_idle(g):
-    if g.get("invalid"):
+    """No jobs, under 1 GiB used, under 5% load. Unknown memory (e.g. MIG without permission)
+    is never called idle."""
+    if g.get("invalid") or busy_procs(g) or g.get("mem_used") is None:
         return False
-    return not busy_procs(g) and (g["mem_used"] or 0) < 1024 and (g["util"] or 0) < 5
+    return g["mem_used"] < 1024 and (g.get("util") or 0) < 5
+
+
+def gpu_label(g):
+    name = short_gpu_name(g["name"])
+    return name + " MIG×%d" % len(g["mig"]) if g.get("mig") else name
 
 
 def pretty_cmd(cmd):
@@ -105,13 +121,26 @@ def gpu_users_text(g):
     return t
 
 
-def server_panel(s, interval, show_procs):
+def retry_note(s, live):
+    """What happens next for a failing server: waiting for r, or the backoff countdown."""
+    if not live or not s.error:
+        return ""
+    if getattr(s, "blocked", False):
+        return "  · press r to retry"
+    left = getattr(s, "retry_at", 0) - time.time()
+    return "  · retry in %ds" % left if left > 1 else ""
+
+
+def server_panel(s, interval, show_procs, width=120):
+    """width is the panel's inner width; narrow panels drop Power, then Fan, then the bars,
+    and keep the Users column to the end."""
     title = Text.assemble((s.name, "bold"), ("  " + s.cfg["host"], "dim"))
     d = s.data
     if d and d.get("driver"):
         title.append("  driver %s · CUDA %s" % (d["driver"], d.get("cuda") or "?"), style="dim")
     if d is None:
         msg = Text(s.error or "connecting...", style="red" if s.error else "dim")
+        msg.append(retry_note(s, interval), style="dim")
         return Panel(msg, title=title, title_align="left", border_style="red" if s.error else "grey50")
 
     stale = s.updated and time.time() - s.updated > max(3 * interval, 15)
@@ -146,26 +175,30 @@ def server_panel(s, interval, show_procs):
     elif d.get("gpu_error") and not d["gpus"]:
         parts.append(Text("GPU: " + d["gpu_error"], style="yellow"))
     elif d["gpus"]:
+        show_power, show_fan, bar_w = width >= 100, width >= 84, 10 if width >= 84 else 6 if width >= 72 else 0
+        has_fan = show_fan and any(g.get("fan") is not None for g in d["gpus"])
         t = Table(box=box.SIMPLE_HEAD, expand=True, pad_edge=False, padding=(0, 1))
         t.add_column("#", justify="right", width=2)
-        t.add_column("GPU", no_wrap=True)
-        has_fan = any(g.get("fan") is not None for g in d["gpus"])
+        t.add_column("GPU", no_wrap=True, overflow="ellipsis", max_width=18)
         t.add_column("Temp Fan" if has_fan else "Temp", justify="right", width=8 if has_fan else 4)
-        t.add_column("Util", no_wrap=True, min_width=15)
-        t.add_column("Memory", no_wrap=True, width=23)
-        t.add_column("Power", justify="right", no_wrap=True, width=9)
-        t.add_column("Users (GPU mem)", ratio=1)
+        t.add_column("Util", no_wrap=True, min_width=bar_w + 5)
+        t.add_column("Memory", no_wrap=True, min_width=bar_w + 12)
+        if show_power:
+            t.add_column("Power", justify="right", no_wrap=True, width=9)
+        t.add_column("Users (GPU mem)", ratio=1, min_width=12)
         for g in d["gpus"]:
             if g.get("invalid"):  # NVML says the GPU is lost / in an unknown state
                 t.add_row(Text(str(g["index"]), style="bold red"), Text(g["name"], style="bold red"),
-                          "", "", "", "", Text("needs admin (reset/reboot)", style="red"))
+                          "", "", "", *([""] if show_power else []), Text("needs admin (reset/reboot)", style="red"))
                 continue
-            mem_pct = 100 * g["mem_used"] / g["mem_total"] if g["mem_total"] else None
+            mem_pct = 100 * g["mem_used"] / g["mem_total"] if g.get("mem_used") is not None and g["mem_total"] else None
             idx = Text(str(g["index"]), style="bold green" if gpu_is_idle(g) else "bold")
-            util = bar(g["util"], 10).append(" %3.0f%%" % (g["util"] or 0))
+            util = (bar(g["util"], bar_w) + Text(" ")) if bar_w else Text()
+            util.append("%3.0f%%" % g["util"] if g.get("util") is not None else "  - ")
             if g.get("enc") or g.get("dec"):  # video encode/decode engines (gpustat -e)
                 util.append(" E%d D%d" % (g.get("enc") or 0, g.get("dec") or 0), style="magenta")
-            memc = bar(mem_pct, 10).append(" %s/%s" % (gib(g["mem_used"]), gib(g["mem_total"])))
+            memc = (bar(mem_pct, bar_w) + Text(" ")) if bar_w else Text()
+            memc.append("%s/%s" % (gib(g.get("mem_used")), gib(g["mem_total"])))
             temp = Text("-" if g["temp"] is None else "%.0f°" % g["temp"],
                         style=level_color(g["temp"], 70, 83))
             if has_fan:
@@ -177,23 +210,26 @@ def server_panel(s, interval, show_procs):
                 users = Text("process info N/A", style="dim")
             else:
                 users = Text("idle" if gpu_is_idle(g) else "-", style="green" if gpu_is_idle(g) else "dim")
-            t.add_row(idx, short_gpu_name(g["name"]), temp, util, memc, power, users)
+            t.add_row(idx, gpu_label(g), temp, util, memc, *([power] if show_power else []), users)
         parts.append(t)
 
         if show_procs:
+            has_sm = any("sm" in p for g in d["gpus"] for p in g["procs"])
             pt = Table(box=box.SIMPLE_HEAD, expand=True, pad_edge=False, padding=(0, 1), style="dim")
             pt.add_column("GPU", justify="right", width=3)
             pt.add_column("PID", justify="right", width=8)
             pt.add_column("User", no_wrap=True)
             pt.add_column("GPU mem", justify="right", width=7)
+            if has_sm:
+                pt.add_column("SM%", justify="right", width=4)
             pt.add_column("CPU%", justify="right", width=6)
             pt.add_column("RAM", justify="right", width=6)
             pt.add_column("Command", ratio=1, no_wrap=True, overflow="ellipsis")
             for g in d["gpus"]:
                 for p in sorted(busy_procs(g), key=lambda p: -(p.get("mem") or 0)):
-                    pt.add_row(str(g["index"]), str(p["pid"]),
-                               user_text(p.get("user"), "@" + p["container"][:6] if p.get("container") else ""),
-                               gib(p.get("mem")), "-" if p.get("cpu") is None else "%.0f" % p["cpu"],
+                    sm = ["-" if p.get("sm") is None else "%d" % p["sm"]] if has_sm else []
+                    pt.add_row(str(g["index"]), str(p["pid"]), owner_text(p), gib(p.get("mem")), *sm,
+                               "-" if p.get("cpu") is None else "%.0f" % p["cpu"],
                                "-" if p.get("rss_kb") is None else gib(p["rss_kb"] / 1024),
                                pretty_cmd(p.get("cmd")))
             if pt.row_count:
@@ -212,6 +248,7 @@ def server_panel(s, interval, show_procs):
         sub.append("  ⚠ %s" % d["gpu_error"][:50], style="yellow")
     if s.error:
         sub.append("  ⚠ %s" % s.error[:60], style="red")
+        sub.append(retry_note(s, interval), style="dim")
     elif stale:
         sub.append("  ⚠ stale", style="yellow")
     elif s.latency is not None:
@@ -276,28 +313,95 @@ def user_summary(servers):
                  border_style="grey50")
 
 
-def header(servers, interval, show_procs):
+GLYPHS = "▁▂▃▄▅▆▇█"
+
+
+def gpu_strip(gpus):
+    """One character per GPU: height = memory used, colour = load (green when idle)."""
+    t = Text()
+    for g in gpus:
+        if g.get("invalid"):
+            t.append("✗", style="bold red")
+            continue
+        frac = g["mem_used"] / g["mem_total"] if g.get("mem_used") is not None and g.get("mem_total") else 0
+        t.append(GLYPHS[min(len(GLYPHS) - 1, int(frac * len(GLYPHS)))],
+                 style="green" if gpu_is_idle(g) else level_color(g.get("util"), 50, 85))
+    return t
+
+
+def compact_table(servers, interval):
+    """One line per server, for when the full panels don't fit (press c to switch)."""
+    t = Table(box=box.SIMPLE_HEAD, expand=True, pad_edge=False, padding=(0, 1))
+    t.add_column("Server", no_wrap=True)
+    t.add_column("GPUs", no_wrap=True)
+    t.add_column("Idle", no_wrap=True, style="green")
+    t.add_column("Who (GPUs)", ratio=1, overflow="ellipsis", no_wrap=True)
+    t.add_column("CPU", justify="right", width=5)
+    t.add_column("RAM", justify="right", width=11)
+    t.add_column("", no_wrap=True, max_width=40, overflow="ellipsis")
+    for s in servers:
+        name = Text(s.name, style="bold")
+        d = s.data
+        if d is None:
+            msg = Text(s.error or "connecting...", style="red" if s.error else "dim")
+            msg.append(retry_note(s, interval), style="dim")
+            t.add_row(name, "", "", msg, "", "", "")
+            continue
+        gpus = d["gpus"]
+        counts = {}
+        for g in gpus:
+            for owner in set(proc_owner(p) for p in busy_procs(g)):
+                counts[owner] = counts.get(owner, 0) + 1
+        who = Text()
+        for owner, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+            user, _, ctr = owner.partition("@")
+            who.append_text(user_text(user, "@" + ctr if ctr else ""))
+            who.append("×%d  " % n if n > 1 else "  ", style="dim")
+        mem = d["mem"]
+        ram = "%.0f/%.0fG" % ((mem["total_kb"] - mem["avail_kb"]) / 2 ** 20, mem["total_kb"] / 2 ** 20)
+        status = Text(s.error[:40], style="red") if s.error else Text("%.1fs" % (s.latency or 0), style="dim")
+        t.add_row(name, gpu_strip(gpus) if gpus else Text("cpu", style="dim"),
+                  ",".join(str(g["index"]) for g in gpus if gpu_is_idle(g)), who,
+                  "%.0f%%" % d["cpu"]["usage"], ram, status)
+    return t
+
+
+def header(servers, interval=0, show_procs=False, short=False):
+    """The top line. short=True (live view, narrow terminals) leaves room for the key hints."""
     gpus = [g for s in servers if s.data for g in s.data["gpus"]]
     idle = sum(gpu_is_idle(g) for g in gpus)
     up = sum(1 for s in servers if s.data and not s.error)
     t = Text()
     t.append(" gpuwho ", style="bold black on cyan")
+    if short:
+        t.append(" %d/%d up · %d GPUs · " % (up, len(servers), len(gpus)))
+        t.append("%d idle" % idle, style="bold green" if idle else "dim")
+        t.append(" · %s" % time.strftime("%H:%M:%S"), style="dim")
+        return t
     t.append("  %d/%d servers up" % (up, len(servers)))
     t.append("  ·  GPUs %d" % len(gpus))
     t.append("  ·  idle %d" % idle, style="bold green" if idle else "dim")
     t.append("  ·  %s" % time.strftime("%Y-%m-%d %H:%M:%S"), style="dim")
     if interval:  # live mode
-        t.append("  ·  every %gs  ·  q quit  p procs%s" % (interval, " (on)" if show_procs else ""), style="dim")
+        t.append("  ·  every %gs" % interval, style="dim")
     return t
 
 
-def dashboard(servers, interval, show_procs, width):
+def body(servers, interval, show_procs, width, compact=False):
+    """Everything below the header: server panels (or the compact table) and the user summary."""
+    if compact:
+        return Group(compact_table(servers, interval), user_summary(servers))
     cols = max(1, min(len(servers), width // 115))
+    inner = width // cols - 5  # grid padding, panel border and padding
     grid = Table.grid(expand=True, padding=(0, 1))
     for _ in range(cols):
         grid.add_column(ratio=1)
-    panels = [server_panel(s, interval, show_procs) for s in servers]
+    panels = [server_panel(s, interval, show_procs, inner) for s in servers]
     for i in range(0, len(panels), cols):
         row = panels[i:i + cols]
         grid.add_row(*(row + [""] * (cols - len(row))))
-    return Group(header(servers, interval, show_procs), grid, user_summary(servers))
+    return Group(grid, user_summary(servers))
+
+
+def dashboard(servers, interval, show_procs, width, compact=False):
+    return Group(header(servers, interval, show_procs), body(servers, interval, show_procs, width, compact))

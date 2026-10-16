@@ -1,0 +1,723 @@
+{
+ "servers": [
+  {
+   "name": "node01",
+   "host": "10.0.0.11",
+   "data": {
+    "hostname": "node01",
+    "time": 1760000000.0,
+    "uptime": 3547523,
+    "cpu": {
+     "count": 64,
+     "usage": 41.0,
+     "load": [
+      26.4,
+      25.9,
+      25.1
+     ],
+     "model": "AMD EPYC 7543 32-Core Processor"
+    },
+    "mem": {
+     "total_kb": 536870912,
+     "avail_kb": 315621376
+    },
+    "users": [
+     {
+      "user": "alice",
+      "cpu": 210.0,
+      "rss_kb": 25794969,
+      "nproc": 4
+     },
+     {
+      "user": "carol",
+      "cpu": 210.0,
+      "rss_kb": 32715571,
+      "nproc": 4
+     },
+     {
+      "user": "bob",
+      "cpu": 100.0,
+      "rss_kb": 18664652,
+      "nproc": 4
+     },
+     {
+      "user": "root",
+      "cpu": 60.0,
+      "rss_kb": 12582912,
+      "nproc": 4
+     }
+    ],
+    "gpus": [
+     {
+      "index": 0,
+      "uuid": "GPU-52e6b438",
+      "name": "NVIDIA RTX A6000",
+      "temp": 79,
+      "fan": 61,
+      "util": 98,
+      "mem_util": 68,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 39117.0,
+      "mem_total": 49140.0,
+      "power": 291.0,
+      "power_limit": 300.0,
+      "procs": [
+       {
+        "pid": 381220,
+        "mem": 38930.0,
+        "type": "C",
+        "user": "alice",
+        "cpu": 103.0,
+        "container": null,
+        "cmd": "python train.py --config configs/vit_l16.yaml --batch-size 256",
+        "rss_kb": 6501171
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 1,
+      "uuid": "GPU-f2a74de4",
+      "name": "NVIDIA RTX A6000",
+      "temp": 78,
+      "fan": 59,
+      "util": 97,
+      "mem_util": 67,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 39101.0,
+      "mem_total": 49140.0,
+      "power": 288.0,
+      "power_limit": 300.0,
+      "procs": [
+       {
+        "pid": 381221,
+        "mem": 38914.0,
+        "type": "C",
+        "user": "alice",
+        "cpu": 101.0,
+        "container": null,
+        "cmd": "python train.py --config configs/vit_l16.yaml --batch-size 256",
+        "rss_kb": 6396313
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 2,
+      "uuid": "GPU-269e0d37",
+      "name": "NVIDIA RTX A6000",
+      "temp": 66,
+      "fan": 44,
+      "util": 64,
+      "mem_util": 34,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 21547.0,
+      "mem_total": 49140.0,
+      "power": 201.0,
+      "power_limit": 300.0,
+      "procs": [
+       {
+        "pid": 402118,
+        "mem": 21360.0,
+        "type": "C",
+        "user": "bob",
+        "cpu": 88.0,
+        "container": null,
+        "cmd": "python finetune.py --model llama-3-8b --lora-r 16",
+        "rss_kb": 11953766
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 3,
+      "uuid": "GPU-6513270e",
+      "name": "NVIDIA RTX A6000",
+      "temp": 33,
+      "fan": 30,
+      "util": 0,
+      "mem_util": 0,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 4.0,
+      "mem_total": 49140.0,
+      "power": 22.0,
+      "power_limit": 300.0,
+      "procs": [],
+      "procs_supported": true
+     },
+     {
+      "index": 4,
+      "uuid": "GPU-a6a3a450",
+      "name": "NVIDIA RTX A6000",
+      "temp": 34,
+      "fan": 30,
+      "util": 0,
+      "mem_util": 0,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 4.0,
+      "mem_total": 49140.0,
+      "power": 24.0,
+      "power_limit": 300.0,
+      "procs": [],
+      "procs_supported": true
+     },
+     {
+      "index": 5,
+      "uuid": "GPU-0c5c7fd0",
+      "name": "NVIDIA RTX A6000",
+      "temp": 47,
+      "fan": 33,
+      "util": 12,
+      "mem_util": 0,
+      "enc": 0,
+      "dec": 8,
+      "mem_used": 16290.0,
+      "mem_total": 49140.0,
+      "power": 96.0,
+      "power_limit": 300.0,
+      "procs": [
+       {
+        "pid": 77810,
+        "mem": 16102.0,
+        "type": "C",
+        "user": "root",
+        "cpu": 6.0,
+        "container": "3f9c2a1b4d5e",
+        "cmd": "tritonserver --model-repository=/models --http-port=8000",
+        "rss_kb": 10276044
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 6,
+      "uuid": "GPU-128b2f33",
+      "name": "NVIDIA RTX A6000",
+      "temp": 81,
+      "fan": 66,
+      "util": 100,
+      "mem_util": 70,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 45521.0,
+      "mem_total": 49140.0,
+      "power": 297.0,
+      "power_limit": 300.0,
+      "procs": [
+       {
+        "pid": 512930,
+        "mem": 45330.0,
+        "type": "C",
+        "user": "carol",
+        "cpu": 104.0,
+        "container": null,
+        "cmd": "python -m torch.distributed.run --nproc-per-node 2 pretrain.py",
+        "rss_kb": 8388608
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 7,
+      "uuid": "GPU-d23f0824",
+      "name": "NVIDIA RTX A6000",
+      "temp": 80,
+      "fan": 64,
+      "util": 100,
+      "mem_util": 70,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 45498.0,
+      "mem_total": 49140.0,
+      "power": 295.0,
+      "power_limit": 300.0,
+      "procs": [
+       {
+        "pid": 512931,
+        "mem": 45310.0,
+        "type": "C",
+        "user": "carol",
+        "cpu": 102.0,
+        "container": null,
+        "cmd": "python -m torch.distributed.run --nproc-per-node 2 pretrain.py",
+        "rss_kb": 8283750
+       }
+      ],
+      "procs_supported": true
+     }
+    ],
+    "gpu_error": null,
+    "nvml": "ok",
+    "driver": "550.127.05",
+    "cuda": "12.4",
+    "agent": {
+     "pid": 4242
+    }
+   }
+  },
+  {
+   "name": "node02",
+   "host": "10.0.0.12",
+   "data": {
+    "hostname": "node02",
+    "time": 1760000000.0,
+    "uptime": 1041923,
+    "cpu": {
+     "count": 128,
+     "usage": 23.0,
+     "load": [
+      31.2,
+      30.8,
+      30.1
+     ],
+     "model": "AMD EPYC 7763 64-Core Processor"
+    },
+    "mem": {
+     "total_kb": 1073741824,
+     "avail_kb": 851443712
+    },
+    "users": [
+     {
+      "user": "dave",
+      "cpu": 409.99999999999994,
+      "rss_kb": 100977868,
+      "nproc": 4
+     }
+    ],
+    "gpus": [
+     {
+      "index": 0,
+      "uuid": "GPU-892f902b",
+      "name": "NVIDIA A100-SXM4-80GB",
+      "temp": 64,
+      "fan": null,
+      "util": 99,
+      "mem_util": 69,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 72811.0,
+      "mem_total": 81920.0,
+      "power": 377.0,
+      "power_limit": 400.0,
+      "procs": [
+       {
+        "pid": 90211,
+        "mem": 72600.0,
+        "type": "C",
+        "user": "dave",
+        "cpu": 100.0,
+        "container": null,
+        "cmd": "torchrun --nproc-per-node 4 train_diffusion.py --precision bf16",
+        "rss_kb": 9961472
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 1,
+      "uuid": "GPU-1818e811",
+      "name": "NVIDIA A100-SXM4-80GB",
+      "temp": 65,
+      "fan": null,
+      "util": 98,
+      "mem_util": 68,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 72824.0,
+      "mem_total": 81920.0,
+      "power": 380.0,
+      "power_limit": 400.0,
+      "procs": [
+       {
+        "pid": 90212,
+        "mem": 72613.0,
+        "type": "C",
+        "user": "dave",
+        "cpu": 101.0,
+        "container": null,
+        "cmd": "torchrun --nproc-per-node 4 train_diffusion.py --precision bf16",
+        "rss_kb": 9961472
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 2,
+      "uuid": "GPU-5d9dc9f8",
+      "name": "NVIDIA A100-SXM4-80GB",
+      "temp": 66,
+      "fan": null,
+      "util": 97,
+      "mem_util": 67,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 72837.0,
+      "mem_total": 81920.0,
+      "power": 383.0,
+      "power_limit": 400.0,
+      "procs": [
+       {
+        "pid": 90213,
+        "mem": 72626.0,
+        "type": "C",
+        "user": "dave",
+        "cpu": 102.0,
+        "container": null,
+        "cmd": "torchrun --nproc-per-node 4 train_diffusion.py --precision bf16",
+        "rss_kb": 9961472
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 3,
+      "uuid": "GPU-9531985d",
+      "name": "NVIDIA A100-SXM4-80GB",
+      "temp": 67,
+      "fan": null,
+      "util": 96,
+      "mem_util": 66,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 72850.0,
+      "mem_total": 81920.0,
+      "power": 386.0,
+      "power_limit": 400.0,
+      "procs": [
+       {
+        "pid": 90214,
+        "mem": 72639.0,
+        "type": "C",
+        "user": "dave",
+        "cpu": 103.0,
+        "container": null,
+        "cmd": "torchrun --nproc-per-node 4 train_diffusion.py --precision bf16",
+        "rss_kb": 9961472
+       }
+      ],
+      "procs_supported": true
+     }
+    ],
+    "gpu_error": null,
+    "nvml": "ok",
+    "driver": "570.86.15",
+    "cuda": "12.8",
+    "agent": {
+     "pid": 4242
+    }
+   }
+  },
+  {
+   "name": "node03",
+   "host": "10.0.0.13",
+   "data": {
+    "hostname": "node03",
+    "time": 1760000000.0,
+    "uptime": 264323,
+    "cpu": {
+     "count": 192,
+     "usage": 3.0,
+     "load": [
+      4.1,
+      4.4,
+      4.0
+     ],
+     "model": "Intel(R) Xeon(R) Platinum 8468"
+    },
+    "mem": {
+     "total_kb": 2147483648,
+     "avail_kb": 1876951040
+    },
+    "users": [
+     {
+      "user": "erin",
+      "cpu": 60.0,
+      "rss_kb": 55259955,
+      "nproc": 4
+     }
+    ],
+    "gpus": [
+     {
+      "index": 0,
+      "uuid": "GPU-0ed90475",
+      "name": "NVIDIA H100 80GB HBM3",
+      "temp": 58,
+      "fan": null,
+      "util": 71,
+      "mem_util": 41,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 73420.0,
+      "mem_total": 81559.0,
+      "power": 412.0,
+      "power_limit": 700.0,
+      "procs": [
+       {
+        "pid": 660120,
+        "mem": 73350.0,
+        "type": "C",
+        "user": "erin",
+        "cpu": 2.0,
+        "container": null,
+        "cmd": "VLLM::Worker_TP0",
+        "rss_kb": 3250585
+       },
+       {
+        "pid": 2210,
+        "mem": 4.0,
+        "type": "G",
+        "user": "gdm",
+        "cpu": 0.0,
+        "container": null,
+        "cmd": "/usr/lib/xorg/Xorg vt1 -displayfd 3 -nolisten tcp",
+        "rss_kb": 104857
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 1,
+      "uuid": "GPU-e8e25d94",
+      "name": "NVIDIA H100 80GB HBM3",
+      "temp": 57,
+      "fan": null,
+      "util": 69,
+      "mem_util": 39,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 73402.0,
+      "mem_total": 81559.0,
+      "power": 405.0,
+      "power_limit": 700.0,
+      "procs": [
+       {
+        "pid": 660121,
+        "mem": 73350.0,
+        "type": "C",
+        "user": "erin",
+        "cpu": 2.0,
+        "container": null,
+        "cmd": "VLLM::Worker_TP1",
+        "rss_kb": 3250585
+       },
+       {
+        "pid": 2210,
+        "mem": 4.0,
+        "type": "G",
+        "user": "gdm",
+        "cpu": 0.0,
+        "container": null,
+        "cmd": "/usr/lib/xorg/Xorg vt1 -displayfd 3 -nolisten tcp",
+        "rss_kb": 104857
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 2,
+      "uuid": "GPU-81e74ef5",
+      "name": "NVIDIA H100 80GB HBM3",
+      "temp": 31,
+      "fan": null,
+      "util": 0,
+      "mem_util": 0,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 8.0,
+      "mem_total": 81559.0,
+      "power": 69.0,
+      "power_limit": 700.0,
+      "procs": [
+       {
+        "pid": 2210,
+        "mem": 4.0,
+        "type": "G",
+        "user": "gdm",
+        "cpu": 0.0,
+        "container": null,
+        "cmd": "/usr/lib/xorg/Xorg vt1 -displayfd 3 -nolisten tcp",
+        "rss_kb": 104857
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 3,
+      "uuid": "GPU-36f675cc",
+      "name": "NVIDIA H100 80GB HBM3",
+      "temp": 32,
+      "fan": null,
+      "util": 0,
+      "mem_util": 0,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 8.0,
+      "mem_total": 81559.0,
+      "power": 69.0,
+      "power_limit": 700.0,
+      "procs": [
+       {
+        "pid": 2210,
+        "mem": 4.0,
+        "type": "G",
+        "user": "gdm",
+        "cpu": 0.0,
+        "container": null,
+        "cmd": "/usr/lib/xorg/Xorg vt1 -displayfd 3 -nolisten tcp",
+        "rss_kb": 104857
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 4,
+      "uuid": "GPU-099950d8",
+      "name": "NVIDIA H100 80GB HBM3",
+      "temp": 31,
+      "fan": null,
+      "util": 0,
+      "mem_util": 0,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 8.0,
+      "mem_total": 81559.0,
+      "power": 69.0,
+      "power_limit": 700.0,
+      "procs": [
+       {
+        "pid": 2210,
+        "mem": 4.0,
+        "type": "G",
+        "user": "gdm",
+        "cpu": 0.0,
+        "container": null,
+        "cmd": "/usr/lib/xorg/Xorg vt1 -displayfd 3 -nolisten tcp",
+        "rss_kb": 104857
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 5,
+      "uuid": "GPU-1600a35a",
+      "name": "NVIDIA H100 80GB HBM3",
+      "temp": 32,
+      "fan": null,
+      "util": 0,
+      "mem_util": 0,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 8.0,
+      "mem_total": 81559.0,
+      "power": 69.0,
+      "power_limit": 700.0,
+      "procs": [
+       {
+        "pid": 2210,
+        "mem": 4.0,
+        "type": "G",
+        "user": "gdm",
+        "cpu": 0.0,
+        "container": null,
+        "cmd": "/usr/lib/xorg/Xorg vt1 -displayfd 3 -nolisten tcp",
+        "rss_kb": 104857
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 6,
+      "uuid": "GPU-6f03675a",
+      "name": "NVIDIA H100 80GB HBM3",
+      "temp": 31,
+      "fan": null,
+      "util": 0,
+      "mem_util": 0,
+      "enc": 0,
+      "dec": 0,
+      "mem_used": 8.0,
+      "mem_total": 81559.0,
+      "power": 69.0,
+      "power_limit": 700.0,
+      "procs": [
+       {
+        "pid": 2210,
+        "mem": 4.0,
+        "type": "G",
+        "user": "gdm",
+        "cpu": 0.0,
+        "container": null,
+        "cmd": "/usr/lib/xorg/Xorg vt1 -displayfd 3 -nolisten tcp",
+        "rss_kb": 104857
+       }
+      ],
+      "procs_supported": true
+     },
+     {
+      "index": 7,
+      "name": "((GPU is lost))",
+      "invalid": true,
+      "procs": []
+     }
+    ],
+    "gpu_error": null,
+    "nvml": "ok",
+    "driver": "580.65.06",
+    "cuda": "13.0",
+    "agent": {
+     "pid": 4242
+    }
+   }
+  },
+  {
+   "name": "cpu01",
+   "host": "10.0.0.21",
+   "data": {
+    "hostname": "cpu01",
+    "time": 1760000000.0,
+    "uptime": 7608323,
+    "cpu": {
+     "count": 96,
+     "usage": 67.0,
+     "load": [
+      64.2,
+      63.0,
+      61.7
+     ],
+     "model": "AMD EPYC 9454 48-Core Processor"
+    },
+    "mem": {
+     "total_kb": 805306368,
+     "avail_kb": 671088640
+    },
+    "users": [
+     {
+      "user": "frank",
+      "cpu": 5830.0,
+      "rss_kb": 92274688,
+      "nproc": 64
+     },
+     {
+      "user": "bob",
+      "cpu": 390.0,
+      "rss_kb": 12687769,
+      "nproc": 4
+     }
+    ],
+    "gpus": [],
+    "gpu_error": null,
+    "nvml": "absent",
+    "driver": null,
+    "cuda": null,
+    "agent": {
+     "pid": 4242
+    }
+   }
+  }
+ ]
+}

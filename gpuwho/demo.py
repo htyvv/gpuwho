@@ -46,6 +46,7 @@ class DemoServer:
         self.retry_at = 0.0
         self.polls = 0
         self.rng = random.Random(seed)
+        self.base = {g["index"]: g.get("util") or 0 for g in self.data["gpus"]}  # each GPU wanders around this
 
     def due(self):
         return True
@@ -67,6 +68,10 @@ class DemoServer:
                 {"pid": pid, "mem": mem, "type": "C", "user": user, "cpu": 100.0, "container": None,
                  "cmd": cmd, "rss_kb": 6 * 2 ** 20}]
             gpu["mem_used"], gpu["util"] = mem + 200, 90
+            self.base[gpu["index"]] = 92
+            if not any(u["user"] == user for u in self.data["users"]):
+                self.data["users"].append({"user": user, "cpu": 105.0, "rss_kb": 9 * 2 ** 20,
+                                           "mem_kb": 7 * 2 ** 20, "nproc": 6})
 
     def probe(self):
         rng, d = self.rng, self.data
@@ -78,10 +83,8 @@ class DemoServer:
             if g.get("invalid"):
                 continue
             busy = any(p.get("type") != "G" for p in g["procs"])
-            if busy:
-                g["util"] = clamp(g["util"] + rng.randint(-7, 7), 55, 100)
-            else:
-                g["util"] = 0
+            base = self.base[g["index"]]
+            g["util"] = clamp(g["util"] + rng.randint(-6, 6), max(0, base - 15), min(100, base + 10)) if busy else 0
             g["temp"] = clamp(round(0.8 * g["temp"] + 0.2 * (32 + 0.5 * g["util"]) + rng.uniform(-1, 1)), 28, 87)
             if g.get("fan") is not None:
                 g["fan"] = clamp(30 + (g["temp"] - 45) * 2, 30, 100)

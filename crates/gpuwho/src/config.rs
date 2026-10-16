@@ -9,7 +9,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 pub const LOCAL_HOSTS: [&str; 3] = ["local", "localhost", "127.0.0.1"];
@@ -76,7 +76,7 @@ fn ensure_private(path: &Path, mode: u32) -> Result<()> {
     let meta = fs::metadata(path).with_context(|| format!("can't read {}", path.display()))?;
     let uid = unsafe { libc::getuid() };
     if meta.uid() != uid {
-        bail!(
+        anyhow::bail!(
             "refusing to use {}: owned by uid {}, not you",
             path.display(),
             meta.uid()
@@ -152,7 +152,7 @@ pub fn save(conf: &Conf) -> Result<()> {
     )
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use std::sync::Mutex;

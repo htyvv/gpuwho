@@ -230,6 +230,40 @@ async fn run(
     Ok((code, String::from_utf8_lossy(&out).into_owned()))
 }
 
+/// Try every key the ssh-agent holds.
+async fn agent_auth<S>(
+    handle: &mut Handle<Client>,
+    user: &str,
+    mut agent: keys::agent::client::AgentClient<S>,
+) -> bool
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    let Ok(ids) = agent.request_identities().await else {
+        return false;
+    };
+    for id in ids {
+        let keys::agent::AgentIdentity::PublicKey { key, .. } = id else {
+            continue;
+        };
+        let hash = handle
+            .best_supported_rsa_hash()
+            .await
+            .ok()
+            .flatten()
+            .flatten();
+        if let Ok(r) = handle
+            .authenticate_publickey_with(user, key, hash, &mut agent)
+            .await
+        {
+            if r.success() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 async fn authenticate(
     handle: &mut Handle<Client>,
     user: &str,
@@ -251,27 +285,16 @@ async fn authenticate(
     }
     let only = s.identities_only;
     if !only && cfg.key.is_none() {
-        if let Ok(mut agent) = keys::agent::client::AgentClient::connect_env().await {
-            if let Ok(ids) = agent.request_identities().await {
-                for id in ids {
-                    let keys::agent::AgentIdentity::PublicKey { key, .. } = id else {
-                        continue;
-                    };
-                    let hash = handle
-                        .best_supported_rsa_hash()
-                        .await
-                        .ok()
-                        .flatten()
-                        .flatten();
-                    if let Ok(r) = handle
-                        .authenticate_publickey_with(user, key, hash, &mut agent)
-                        .await
-                    {
-                        if r.success() {
-                            return Ok(());
-                        }
-                    }
-                }
+        #[cfg(unix)]
+        let agent = keys::agent::client::AgentClient::connect_env().await.ok();
+        #[cfg(windows)]
+        let agent =
+            keys::agent::client::AgentClient::connect_named_pipe(r"\\.\pipe\openssh-ssh-agent")
+                .await
+                .ok();
+        if let Some(agent) = agent {
+            if agent_auth(handle, user, agent).await {
+                return Ok(());
             }
         }
     }

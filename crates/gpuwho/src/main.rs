@@ -166,7 +166,16 @@ enum Cmd {
     /// Model Context Protocol server on stdio, for coding agents
     Mcp,
     /// the dashboard on a made-up cluster, no servers needed
-    Demo,
+    Demo {
+        /// print N frames as ANSI text instead (for the README images)
+        #[arg(long, hide = true)]
+        frames: Option<usize>,
+        /// with --frames: only these demo servers
+        #[arg(long, hide = true, value_delimiter = ',')]
+        only: Vec<String>,
+        #[arg(long, hide = true, default_value_t = 236)]
+        width: u16,
+    },
     /// register a server
     Add {
         name: String,
@@ -1028,6 +1037,36 @@ fn demo_views() -> Vec<View> {
         .collect()
 }
 
+/// `demo --frames N`: N polls of the demo cluster as ANSI text, separated by form feeds.
+fn demo_frames(cli: &Cli, n: usize, only: &[String], width: u16) {
+    let mut servers: Vec<(demo::DemoServer, View)> = demo::entries()
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let d = demo::DemoServer::new(e, i as u64);
+            let v = View::new(&d.name, &d.host);
+            (d, v)
+        })
+        .filter(|(d, _)| only.is_empty() || only.contains(&d.name))
+        .collect();
+    let mut c = ctx(cli, true);
+    c.live = false; // no "retry in" notes
+    c.interval = cli.interval;
+    for i in 0..n {
+        for (d, v) in servers.iter_mut() {
+            v.apply(d.poll(), Instant::now() - Duration::from_millis(400), 1.0);
+        }
+        let views: Vec<View> = servers.iter().map(|(_, v)| v.clone()).collect();
+        if i > 0 {
+            println!("\x0c");
+        }
+        print!(
+            "{}",
+            render::to_ansi(&render::dashboard(&views, &c, width, cli.compact), true)
+        );
+    }
+}
+
 fn cmd_watch(cli: &Cli, demo: bool) -> Result<i32> {
     let rt = runtime();
     let interval = Duration::from_secs_f64(cli.interval);
@@ -1061,6 +1100,11 @@ fn cmd_watch(cli: &Cli, demo: bool) -> Result<i32> {
 }
 
 fn main() {
+    // `gpuwho once | head` should just stop, like other CLI tools, not panic on EPIPE
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let cli = Cli::parse();
     let tty = std::io::stdout().is_terminal();
     let code = match &cli.cmd {
@@ -1070,11 +1114,19 @@ fn main() {
             cmd_once(&cli, &[], false, false, None, false, 30.0)
         }
         None => cmd_watch(&cli, false),
-        Some(Cmd::Demo) if !tty => {
+        Some(Cmd::Demo {
+            frames: Some(n),
+            only,
+            width,
+        }) => {
+            demo_frames(&cli, *n, only, *width);
+            Ok(0)
+        }
+        Some(Cmd::Demo { .. }) if !tty => {
             print_dashboard(&demo_views(), &cli);
             Ok(0)
         }
-        Some(Cmd::Demo) => cmd_watch(&cli, true),
+        Some(Cmd::Demo { .. }) => cmd_watch(&cli, true),
         Some(Cmd::Once {
             names,
             json,

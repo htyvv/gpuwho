@@ -153,8 +153,9 @@ def describe(e):
     if isinstance(e, socket.gaierror):
         return "unknown host: %s" % msg
     if isinstance(e, paramiko.ssh_exception.NoValidConnectionsError):
-        codes = set(getattr(err, "errno", None) for err in e.errors.values())
-        return "connection refused" if codes <= {errno.ECONNREFUSED} else "unreachable: %s" % msg
+        refused = all(isinstance(err, ConnectionRefusedError) or getattr(err, "errno", None) == errno.ECONNREFUSED
+                      for err in e.errors.values())
+        return "connection refused" if refused else "unreachable: %s" % msg
     if isinstance(e, (socket.timeout, TimeoutError)):
         return "unreachable (no answer in time)" if "answer within" not in msg else msg
     if isinstance(e, paramiko.SSHException) and "banner" in msg:

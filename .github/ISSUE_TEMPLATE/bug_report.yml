@@ -1,0 +1,36 @@
+name: Bug report
+description: Something is shown wrong, or gpuwho crashes / can't connect
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead. A screenshot helps a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: snapshot
+    attributes:
+      label: "`gpuwho once --json SERVER` output"
+      description: |
+        For the server that looks wrong. This contains user names, hostnames and command lines,
+        so redact what you don't want to post.
+      render: json
+  - type: input
+    id: version
+    attributes:
+      label: gpuwho version
+      placeholder: "gpuwho --version"
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Where you run gpuwho
+      placeholder: "macOS 15, iTerm2, Python 3.12"
+  - type: input
+    id: server
+    attributes:
+      label: The server
+      placeholder: "Ubuntu 22.04, driver 550.127, 8x RTX A6000, python3 3.10"

@@ -5,6 +5,40 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-16
+
+gpuwho is now written in Rust, client and server agent, and grew the features labs asked
+for once they could see who uses which GPU: waiting for one, reserving one, and noticing
+who holds one without using it.
+
+### Added
+
+- `gpuwho free --wait [--wait-timeout 2h] [--notify URL] [-- CMD]`: wait for GPUs, ring the
+  bell, post to Slack/Discord/Feishu/WeCom/DingTalk/ntfy/Telegram, or run CMD with
+  `CUDA_VISIBLE_DEVICES` set.
+- `gpuwho claim SERVER:GPUS --for 6h --note ...`, `unclaim`, `claims`: soft reservations
+  everyone sees; `free` skips GPUs claimed by others.
+- Held-idle detection: a job keeping >= 1 GiB at ~0% for `--idle-after` minutes (30) is
+  tagged, and the per-user table gets a "Held idle" column.
+- `gpuwho kill SERVER:GPUS`: your own processes on those GPUs, after asking.
+- `gpuwho record` / `gpuwho report`: GPU-hours per person from a JSONL file, no daemon.
+- `gpuwho once --html`, `gpuwho mcp` (Model Context Protocol server for coding agents).
+- Unaccounted GPU memory, miner-looking processes, `--max-gpus` limit, process age.
+- Prebuilt binaries for Linux (x86_64, aarch64; glibc 2.17+), macOS and Windows, an
+  install script, and wheels so `pipx install gpuwho` works without Rust.
+
+### Changed
+
+- The server agent is a 600 KB Rust binary, copied once to `/run/user/UID` (or
+  `~/.cache/gpuwho`); `probe.py` over `python3 -c` remains the fallback and can be forced
+  per server with `"agent": "python"`. Servers no longer need python3.
+- Agent: 47 -> 31 ms of CPU per poll (host with 1,750 processes and 8 GPUs).
+- Client: 5% -> 0.3% of a core for a live view of 6 servers; a frame of 64 servers
+  412 -> 21 ms; startup in milliseconds.
+- `servers.json` and `known_hosts` are read as before; `once --json` keeps schema 1 and
+  adds `claims`.
+
+
 ## [0.2.0] - 2026-10-16
 
 Benchmarked against nvitop, gpustat, nvtop, all-smi, gpustat-web, btop and psutil, and
@@ -64,6 +98,7 @@ First public release.
   ctypes, never calls `nvidia-smi`.
 - Password or key authentication, trust-on-first-use host keys, config forced to mode 0600.
 
-[Unreleased]: https://github.com/htyvv/gpuwho/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/htyvv/gpuwho/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/htyvv/gpuwho/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/htyvv/gpuwho/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/htyvv/gpuwho/releases/tag/v0.1.0

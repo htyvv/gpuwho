@@ -5,6 +5,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-16
+
+### Fixed
+
+- Upgrading left the previous agent binary in `/run/user/UID` (or `~/.cache/gpuwho`) on
+  every server; after uploading a new one gpuwho now removes your older ones.
+- The key hints were cut off in an 80-column live view on Windows.
+
 ## [1.0.0] - 2026-10-16
 
 gpuwho is now written in Rust, client and server agent, and grew the features labs asked
@@ -98,7 +106,8 @@ First public release.
   ctypes, never calls `nvidia-smi`.
 - Password or key authentication, trust-on-first-use host keys, config forced to mode 0600.
 
-[Unreleased]: https://github.com/htyvv/gpuwho/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/htyvv/gpuwho/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/htyvv/gpuwho/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/htyvv/gpuwho/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/htyvv/gpuwho/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/htyvv/gpuwho/releases/tag/v0.1.0

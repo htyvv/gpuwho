@@ -1,0 +1,31 @@
+[package]
+name = "gpuwho"
+description = "nvidia-smi for every server in your lab: who is using which GPU, over plain SSH"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["gpu", "nvidia", "monitoring", "ssh", "tui"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.6", features = ["derive"] }
+dirs = "7"
+flate2 = "1"
+futures = "0.3"
+ratatui = "0.30"
+russh = "0.64"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "time", "process", "io-util", "sync", "net", "fs", "signal"] }
+
+[build-dependencies]
+flate2 = "1"
+sha2 = "0.11"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

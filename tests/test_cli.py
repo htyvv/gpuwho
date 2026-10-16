@@ -68,8 +68,11 @@ def test_exit_codes_and_free(conf_dir):
     assert gpuwho("test", check=False).returncode == 1
     assert gpuwho("once", check=False).returncode == 0  # one server answered
     assert gpuwho("once", "--strict", check=False).returncode == 1
-    free = gpuwho("free", "here", "--json", check=False)  # CI machines have no GPUs
-    assert json.loads(free.stdout) == [] and free.returncode == 1
+    free = gpuwho("free", "here", "--json", check=False)
+    found = json.loads(free.stdout)  # none on CI runners; maybe some on a GPU box
+    assert all(set(r) == {"server", "gpu", "free_gib", "name"} for r in found)
+    assert free.returncode == (0 if found else 1)
+    assert gpuwho("free", "here", "-n", "999", check=False).returncode == 1
 
 
 @linux_only

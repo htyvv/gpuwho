@@ -6,8 +6,12 @@ on:
 
 permissions: {}
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  build:
+  # The agent that gets uploaded to servers: glibc 2.17, so it runs on anything from CentOS 7 up.
+  agents:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -15,22 +19,143 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: tag must match the crate version
+        run: |
+          v=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name=="gpuwho") | .version')
+          test "$v" = "${GITHUB_REF_NAME#v}" || { echo "tag $GITHUB_REF_NAME but Cargo.toml says $v"; exit 1; }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+      - run: pip install ziglang
+      - run: |
+          cargo zigbuild --release -p gpuwho-agent --target x86_64-unknown-linux-gnu.2.17
+          cargo zigbuild --release -p gpuwho-agent --target aarch64-unknown-linux-gnu.2.17
+          mkdir agents
+          cp target/x86_64-unknown-linux-gnu/release/gpuwho-agent agents/gpuwho-agent-x86_64
+          cp target/aarch64-unknown-linux-gnu/release/gpuwho-agent agents/gpuwho-agent-aarch64
+      - uses: actions/upload-artifact@v7
+        with:
+          name: agents
+          path: agents/
+          if-no-files-found: error
+
+  binaries:
+    name: binary (${{ matrix.target }})
+    needs: agents
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    env:
+      GPUWHO_AGENT_X86_64: ${{ github.workspace }}/agents/gpuwho-agent-x86_64
+      GPUWHO_AGENT_AARCH64: ${{ github.workspace }}/agents/gpuwho-agent-aarch64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: agents
+          path: agents/
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: build (Linux, glibc 2.17)
+        if: runner.os == 'Linux'
+        run: |
+          pip install ziglang
+          cargo install --locked cargo-zigbuild
+          cargo zigbuild --release -p gpuwho --target ${{ matrix.target }}.2.17
+      - name: build
+        if: runner.os != 'Linux'
+        run: cargo build --release -p gpuwho --target ${{ matrix.target }}
+      - name: package
+        shell: bash
+        run: |
+          name=gpuwho-${{ matrix.target }}
+          mkdir "$name"
+          cp README.md LICENSE "$name"/
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp target/${{ matrix.target }}/release/gpuwho.exe "$name"/
+            7z a "$name.zip" "$name" > /dev/null
+          else
+            cp target/${{ matrix.target }}/release/gpuwho "$name"/
+            tar czf "$name.tar.gz" "$name"
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bin-${{ matrix.target }}
+          path: gpuwho-*.*
+          if-no-files-found: error
+
+  wheels:
+    name: wheel (${{ matrix.target }})
+    needs: agents
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, args: --zig --compatibility manylinux2014 }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, args: --zig --compatibility manylinux2014 }
+          - { os: macos-latest, target: universal2-apple-darwin, args: "" }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, args: "" }
+    env:
+      GPUWHO_AGENT_X86_64: ${{ github.workspace }}/agents/gpuwho-agent-x86_64
+      GPUWHO_AGENT_AARCH64: ${{ github.workspace }}/agents/gpuwho-agent-aarch64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: agents
+          path: agents/
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target == 'universal2-apple-darwin' && 'aarch64-apple-darwin, x86_64-apple-darwin' || matrix.target }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - run: python -m pip install build twine
-      - run: python -m build
-      - name: tag must match gpuwho.__version__
-        run: test -f "dist/gpuwho-${GITHUB_REF_NAME#v}.tar.gz"
-      - run: python -m twine check --strict dist/*
+      - run: pip install "maturin>=1.9,<2" ziglang
+      - run: maturin build --release --target ${{ matrix.target }} ${{ matrix.args }} -o dist
       - uses: actions/upload-artifact@v7
         with:
-          name: dist
+          name: wheel-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+
+  sdist:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: pip install "maturin>=1.9,<2"
+      - run: maturin sdist -o dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sdist
           path: dist/
           if-no-files-found: error
 
   github-release:
-    needs: build
+    needs: [binaries, wheels, sdist]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -40,21 +165,22 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: dist
-          path: dist/
+          path: out/
+          merge-multiple: true
       - name: this version's CHANGELOG section
         run: |
           awk -v v="${GITHUB_REF_NAME#v}" '/^## \[/ { p = index($0, "[" v "]") > 0; next } /^\[/ { p = 0 } p' \
             CHANGELOG.md > notes.md
-          cat notes.md
+          (cd out && sha256sum * > SHA256SUMS)
+          ls -la out
       - uses: softprops/action-gh-release@v3
         with:
           body_path: notes.md
-          files: dist/*
+          files: out/*
 
   # Off until a trusted publisher is set up on PyPI; then set the repo variable PYPI_PUBLISH=true.
   pypi:
-    needs: build
+    needs: [wheels, sdist]
     if: vars.PYPI_PUBLISH == 'true'
     runs-on: ubuntu-latest
     environment:
@@ -65,6 +191,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: dist
+          pattern: "{wheel-*,sdist}"
           path: dist/
+          merge-multiple: true
       - uses: pypa/gh-action-pypi-publish@release/v1

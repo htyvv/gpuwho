@@ -26,25 +26,29 @@
       "user": "alice",
       "cpu": 210.0,
       "rss_kb": 25794969,
-      "nproc": 4
+      "nproc": 4,
+      "mem_kb": 10276044
      },
      {
       "user": "carol",
       "cpu": 210.0,
       "rss_kb": 32715571,
-      "nproc": 4
+      "nproc": 4,
+      "mem_kb": 13002342
      },
      {
       "user": "bob",
       "cpu": 100.0,
       "rss_kb": 18664652,
-      "nproc": 4
+      "nproc": 4,
+      "mem_kb": 14784921
      },
      {
       "user": "root",
       "cpu": 60.0,
       "rss_kb": 12582912,
-      "nproc": 4
+      "nproc": 4,
+      "mem_kb": 12058624
      }
     ],
     "gpus": [
@@ -286,7 +290,8 @@
       "user": "dave",
       "cpu": 409.99999999999994,
       "rss_kb": 100977868,
-      "nproc": 4
+      "nproc": 4,
+      "mem_kb": 42991616
      }
     ],
     "gpus": [
@@ -438,7 +443,8 @@
       "user": "erin",
       "cpu": 60.0,
       "rss_kb": 55259955,
-      "nproc": 4
+      "nproc": 4,
+      "mem_kb": 52638515
      }
     ],
     "gpus": [
@@ -700,13 +706,15 @@
       "user": "frank",
       "cpu": 5830.0,
       "rss_kb": 92274688,
-      "nproc": 64
+      "nproc": 64,
+      "mem_kb": 64277708
      },
      {
       "user": "bob",
       "cpu": 390.0,
       "rss_kb": 12687769,
-      "nproc": 4
+      "nproc": 4,
+      "mem_kb": 6291456
      }
     ],
     "gpus": [],

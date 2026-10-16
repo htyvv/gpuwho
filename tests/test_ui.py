@@ -46,6 +46,13 @@ def test_collect_users(cluster):
     assert "root@3f9c2a" in users  # docker job, labelled by short container id
     assert "gdm" not in users  # display server filtered out
     assert users["frank"]["gpus"] == [] and users["frank"]["cpu"] > 5000  # CPU-only user still listed
+    assert round(users["bob"]["ram"] / 2**20, 1) == 20.1  # cgroup RAM, summed over node01 and cpu01
+
+
+def test_ram_falls_back_to_rss_for_old_agents():
+    assert ui.user_ram_kb({"rss_kb": 100}) == 100
+    assert ui.user_ram_kb({"rss_kb": 100, "mem_kb": 40}) == 40
+    assert ui.user_ram_kb({"rss_kb": 100, "mem_kb": None}) == 100
 
 
 def test_dashboard_renders_every_server(cluster):

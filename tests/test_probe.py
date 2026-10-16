@@ -47,6 +47,7 @@ def test_sample_shape():
     assert snap["mem"]["total_kb"] > 0
     assert snap["nvml"] in ("ok", "absent", "error")
     assert isinstance(snap["gpus"], list)
+    assert all(u["mem_kb"] >= 0 for u in snap["users"])
     json.dumps(snap)
 
 
@@ -65,3 +66,44 @@ def test_agent_protocol():
         assert agent.wait(timeout=10) == 0
     finally:
         agent.kill()
+
+
+@pytest.mark.parametrize("cgroup, expected", [
+    ("0::/user.slice/user-1000.slice/session-3.scope", ["/sys/fs/cgroup/user.slice/user-1000.slice/session-3.scope"]),
+    ("0::/system.slice/docker-3f9c2a1b4d5e.scope", ["/sys/fs/cgroup/system.slice/docker-3f9c2a1b4d5e.scope"]),
+    # hybrid: v2 for systemd tracking, memory controller still on v1
+    ("12:memory:/user.slice/user-1000.slice\n1:name=systemd:/user.slice/user-1000.slice/session-3.scope\n"
+     "0::/user.slice/user-1000.slice/session-3.scope",
+     ["/sys/fs/cgroup/memory/user.slice/user-1000.slice",
+      "/sys/fs/cgroup/user.slice/user-1000.slice/session-3.scope"]),
+    ("4:cpu,cpuacct:/\n7:blkio,memory:/user.slice", ["/sys/fs/cgroup/memory/user.slice"]),
+    ("0::/", []),  # root cgroup counts the whole machine
+    ("", []),
+])
+def test_memcg_dirs(cgroup, expected):
+    assert sorted(probe.memcg_dirs(cgroup)) == sorted(expected)
+
+
+def test_charged_kb_v2_counts_anon_and_shmem_not_cache():
+    stat = "anon 1073741824\nfile 53687091200\nkernel 1000\nshmem 2147483648\nfile_mapped 1\n"
+    assert probe.charged_kb(stat) == 3 * 1024 * 1024
+
+
+def test_charged_kb_v1():
+    assert probe.charged_kb("cache 999999\nrss 1048576\nshmem 1048576\nmapped_file 1\n") == 2048
+
+
+def test_charged_kb_unreadable():
+    assert probe.charged_kb("") is None
+
+
+def test_split_by_rss():
+    charged = {"/u/alice": 10 * 1024, "/docker/x": 3000, "/gone": None}.get
+    groups = {
+        "/u/alice": {"alice": 300 * 1024},       # 30 forked workers: RSS says 300G, cgroup says 10G
+        "/docker/x": {"root": 2000, "bob": 1000},  # shared cgroup: split by RSS
+        "/gone": {"carol": 700},                   # memory.stat unreadable: RSS as is
+        None: {"dave": 500},                       # no memory cgroup at all
+    }
+    assert probe.split_by_rss(groups, charged) == {"alice": 10 * 1024, "root": 2000, "bob": 1000,
+                                                    "carol": 700, "dave": 500}

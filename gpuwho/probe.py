@@ -101,6 +101,64 @@ def cmdline(pid):
     return read("/proc/%d/cmdline" % pid).replace("\x00", " ").strip()[:300]
 
 
+# ---------------------------------------------------------------- RAM per user
+#
+# Summing RSS over a user's processes overcounts badly: forked DataLoader workers share
+# their parent's pages copy-on-write and /dev/shm tensors show up in every process that
+# maps them, so 30 workers can "use" 30x the real memory. The kernel charges each page to
+# exactly one cgroup, so per-user RAM is read from cgroups instead (user-UID.slice for
+# SSH sessions, docker-*.scope for containers) and shared out by RSS when one cgroup
+# holds several users. Without cgroup memory accounting it falls back to summing RSS.
+
+def memcg_dirs(cgroup):
+    """Memory cgroup directories named in /proc/PID/cgroup text: cgroup v2 first, then v1.
+    The root cgroup is skipped: its counters cover the whole machine."""
+    dirs = []
+    for line in cgroup.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) != 3 or parts[2].rstrip("/") == "":
+            continue
+        if parts[0] == "0" and parts[1] == "":
+            dirs.append("/sys/fs/cgroup" + parts[2].rstrip("/"))
+        elif "memory" in parts[1].split(","):
+            dirs.append("/sys/fs/cgroup/memory" + parts[2].rstrip("/"))
+    return dirs
+
+
+def memcg_of(pid):
+    for d in memcg_dirs(read("/proc/%d/cgroup" % pid)):
+        if os.path.exists(d + "/memory.stat"):
+            return d
+    return None
+
+
+def charged_kb(memory_stat):
+    """Anonymous + shared memory charged to a cgroup, in kB, from its memory.stat text.
+    Page cache is left out: it is reclaimable and not what people mean by "using RAM"."""
+    st = {}
+    for line in memory_stat.splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            st[parts[0]] = parts[1]
+    anon = st.get("anon", st.get("rss"))  # cgroup v2, v1
+    if anon is None:
+        return None
+    return (int(anon) + int(st.get("shmem", 0))) // 1024
+
+
+def split_by_rss(groups, charged):
+    """{user: kB}. groups is {cgroup dir or None: {user: RSS kB}}; charged(dir) gives the
+    cgroup's memory in kB, or None if unreadable, in which case RSS is used as is."""
+    out = {}
+    for d, shares in groups.items():
+        used = charged(d) if d else None
+        total = sum(shares.values())
+        for user, rss in shares.items():
+            kb = rss if used is None or not total else used * rss / total
+            out[user] = out.get(user, 0) + kb
+    return out
+
+
 # ---------------------------------------------------------------- NVML (ctypes)
 
 NVML_SUCCESS = 0
@@ -342,7 +400,7 @@ class Sampler:
         wall_ticks = max(now - t_prev, 0.1) * CLK_TCK
 
         # per-process CPU% where 100% == one full core
-        per_pid_cpu, users = {}, {}
+        per_pid_cpu, users, groups = {}, {}, {}
         for pid, (ticks, rss) in p1.items():
             prev = p0.get(pid)
             pct = max(0.0, 100.0 * (ticks - prev[0]) / wall_ticks) if prev else 0.0
@@ -356,6 +414,10 @@ class Sampler:
             agg["cpu"] += pct
             agg["rss_kb"] += rss * PAGE_KB
             agg["nproc"] += 1
+            shares = groups.setdefault(memcg_of(pid), {})
+            shares[u] = shares.get(u, 0) + rss * PAGE_KB
+        for u, kb in split_by_rss(groups, lambda d: charged_kb(read(d + "/memory.stat"))).items():
+            users[u]["mem_kb"] = int(kb)
 
         gpus, gpu_err = self.nvml.query()
         for g in gpus:

@@ -83,6 +83,7 @@ gpuwho once --json | jq -r 'to_entries[] | .key as $s | .value.gpus[]?
 - The agent stays up for the session. Each refresh, gpuwho sends a newline and gets one line of JSON back. No new SSH handshake, no new process per poll.
 - GPU data comes from NVML through `ctypes`, the library behind `nvidia-smi`. It never runs `nvidia-smi` and never parses its output.
 - Process owners come from `/proc`, containers from `/proc/PID/cgroup` (Docker, containerd, Podman, CRI-O).
+- RAM per user is what the kernel charged to that user's cgroups (anonymous plus shared memory), not a sum of RSS. Summing RSS counts the pages that forked DataLoader workers share with their parent once per worker; on one of our servers it said 1.4 TB for a user who held 220 GB. Without cgroup memory accounting gpuwho falls back to RSS.
 - The agent is plain stdlib Python and runs on 3.6+. CI checks that on Python 3.6, 3.7 and 3.8 with the exact command gpuwho sends.
 - It runs as your user, needs no root, and exits when the SSH session closes, after 90 s without a request, or after 6 hours.
 - A poll costs about 70 ms of CPU on a server with 1,700 processes and 8 GPUs, so roughly 2% of one core at the default 3 s interval.
@@ -147,8 +148,8 @@ The server's host key changed since gpuwho first saw it. If you know why (reinst
 **`process info N/A`**
 NVML said it can't list processes for that GPU. Utilization and memory still work.
 
-**A user's RAM is larger than the machine**
-RAM per user is the sum of each process's RSS, and memory shared between processes (PyTorch DataLoader workers, for example) is counted once per process. Treat it as an upper bound.
+**A user's RAM looks bigger than `ps` or `htop` adds up to, or smaller**
+gpuwho reports the memory the kernel charged to the user's cgroup, which includes their files in `/dev/shm` and leaves out page cache. The process table still shows plain RSS per process.
 
 ## Development
 

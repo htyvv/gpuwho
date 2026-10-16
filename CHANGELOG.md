@@ -17,6 +17,9 @@ First public release.
   gnome-shell) are not counted as users, so the GPU still shows as idle.
 - Lost GPUs ("GPU is lost" from NVML) get a red row instead of breaking the whole server.
 - Cross-server summary per user: GPUs held, GPU memory, CPU cores, RAM.
+- RAM per user is read from the user's cgroups (anonymous + shared memory), so pages shared
+  by forked workers or `/dev/shm` count once instead of once per process. Falls back to summed
+  RSS where cgroup memory accounting isn't available.
 - `gpuwho once` (text or `--json`), `add`, `remove`, `list`, `test`.
 - The agent that is piped over SSH: stdlib only, runs on Python 3.6+, talks to NVML through
   ctypes, never calls `nvidia-smi`.

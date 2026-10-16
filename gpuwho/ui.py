@@ -86,6 +86,11 @@ def pretty_cmd(cmd):
     return t
 
 
+def user_ram_kb(u):
+    """RAM a user holds on one server: cgroup-charged memory, or summed RSS from older agents."""
+    return u["mem_kb"] if u.get("mem_kb") is not None else u["rss_kb"]
+
+
 def gpu_users_text(g):
     agg = {}
     for p in busy_procs(g):
@@ -130,7 +135,7 @@ def server_panel(s, interval, show_procs):
     cpu_line = Text("CPU users  ", style="bold")
     for u in top_users:
         cpu_line.append_text(user_text(u["user"]))
-        cpu_line.append(" %.1fc %.0fG   " % (u["cpu"] / 100, u["rss_kb"] / 1024 / 1024), style="dim")
+        cpu_line.append(" %.1fc %.0fG   " % (u["cpu"] / 100, user_ram_kb(u) / 1024 / 1024), style="dim")
     if not top_users:
         cpu_line.append("-", style="dim")
 
@@ -216,11 +221,11 @@ def server_panel(s, interval, show_procs):
 
 
 def collect_users(servers):
-    """GPU + CPU usage per user across every server: {user: {gpus, gpu_mem, cpu, rss, hosts}}."""
+    """GPU + CPU usage per user across every server: {user: {gpus, gpu_mem, cpu, ram, hosts}}."""
     agg = {}
 
     def entry(user):
-        return agg.setdefault(user, {"gpus": [], "gpu_mem": 0.0, "cpu": 0.0, "rss": 0.0, "hosts": {}})
+        return agg.setdefault(user, {"gpus": [], "gpu_mem": 0.0, "cpu": 0.0, "ram": 0.0, "hosts": {}})
 
     for s in servers:
         if not s.data:
@@ -238,7 +243,7 @@ def collect_users(servers):
             if u["cpu"] >= 50 or u["user"] in agg:
                 e = entry(u["user"])
                 e["cpu"] += u["cpu"]
-                e["rss"] += u["rss_kb"]
+                e["ram"] += user_ram_kb(u)
     return agg
 
 
@@ -266,7 +271,7 @@ def user_summary(servers):
         t.add_row(label, str(len(e["gpus"])) if e["gpus"] else "-",
                   gib(e["gpu_mem"]) if e["gpus"] else "-", where,
                   "-" if in_ctr else "%.1f" % (e["cpu"] / 100),
-                  "-" if in_ctr else "%.0fG" % (e["rss"] / 1024 / 1024))
+                  "-" if in_ctr else "%.0fG" % (e["ram"] / 1024 / 1024))
     return Panel(t, title=Text("Users across all servers", style="bold"), title_align="left",
                  border_style="grey50")
 

@@ -284,6 +284,129 @@ pub struct Ctx {
     pub procs: bool,
     pub me: String,
     pub now: Instant,
+    /// flag a process that has held memory without computing for this long (live view only)
+    pub idle_after: std::time::Duration,
+    /// lab rule: at most this many GPUs per person
+    pub max_gpus: Option<usize>,
+}
+
+impl Ctx {
+    pub fn new(live: bool, interval: f64, procs: bool, me: String) -> Self {
+        Ctx {
+            live,
+            interval,
+            procs,
+            me,
+            now: Instant::now(),
+            idle_after: std::time::Duration::from_secs(30 * 60),
+            max_gpus: None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------- claims, idle holders, oddities
+
+/// Active soft reservations on GPU `index` of a server.
+pub fn claims_on(d: &Value, index: u64) -> Vec<&Value> {
+    arr(d, "claims")
+        .iter()
+        .filter(|c| arr(c, "gpus").iter().any(|g| g.as_u64() == Some(index)))
+        .collect()
+}
+
+pub fn local_time(epoch: f64) -> String {
+    #[cfg(unix)]
+    {
+        let t = epoch as libc::time_t;
+        let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+        unsafe { libc::localtime_r(&t, &mut tm) };
+        let now = unsafe { libc::time(std::ptr::null_mut()) };
+        if (t - now).abs() < 20 * 3600 {
+            format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)
+        } else {
+            format!(
+                "{:02}-{:02} {:02}:{:02}",
+                tm.tm_mon + 1,
+                tm.tm_mday,
+                tm.tm_hour,
+                tm.tm_min
+            )
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        format!("{:.0}", epoch)
+    }
+}
+
+fn claim_spans(claims: &[&Value], me: &str, prefix: &str) -> Vec<Span<'static>> {
+    let mut out = Vec::new();
+    for (i, c) in claims.iter().enumerate() {
+        let user = text(c, "user").unwrap_or("?").to_string();
+        out.push(Span::styled(
+            if i == 0 {
+                prefix.to_string()
+            } else {
+                ", ".into()
+            },
+            Style::new().fg(Color::Cyan),
+        ));
+        out.push(Span::styled(user.clone(), user_style(&user, me)));
+        let mut tail = format!(" till {}", local_time(num(c, "until").unwrap_or(0.0)));
+        if let Some(note) = text(c, "note").filter(|n| !n.is_empty()) {
+            tail.push_str(&format!(" · {}", note));
+        }
+        out.push(Span::styled(tail, Style::new().fg(Color::Cyan)));
+    }
+    out
+}
+
+const MINERS: [&str; 12] = [
+    "xmrig",
+    "nbminer",
+    "t-rex",
+    "trex",
+    "lolminer",
+    "ethminer",
+    "phoenixminer",
+    "gminer",
+    "nanominer",
+    "teamredminer",
+    "bzminer",
+    "srbminer",
+];
+
+/// A command that looks like a crypto miner (by executable name).
+pub fn suspicious(p: &Value) -> bool {
+    let cmd = text(p, "cmd").unwrap_or("").to_ascii_lowercase();
+    let exe = cmd
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .to_string();
+    MINERS.iter().any(|m| exe.starts_with(m))
+        || cmd.contains("stratum+tcp://")
+        || cmd.contains("stratum+ssl://")
+}
+
+/// GPU memory no listed process accounts for (killed jobs, other PID namespaces, ...).
+pub fn unaccounted_mib(g: &Value) -> Option<f64> {
+    if g["procs_supported"] == Value::Bool(false) {
+        return None;
+    }
+    let listed: f64 = arr(g, "procs").iter().filter_map(|p| num(p, "mem")).sum();
+    let left = num(g, "mem_used")? - listed;
+    (left > 1024.0).then_some(left)
+}
+
+/// How long the process `pid` on GPU `index` has held memory without computing, if long enough.
+pub fn held_idle_for(v: &View, ctx: &Ctx, index: u64, pid: u64) -> Option<std::time::Duration> {
+    let since = v.held_idle.get(&(index, pid))?;
+    let d = ctx.now.saturating_duration_since(*since);
+    (ctx.live && d >= ctx.idle_after).then_some(d)
 }
 
 fn retry_note(v: &View, ctx: &Ctx) -> String {
@@ -301,24 +424,56 @@ fn retry_note(v: &View, ctx: &Ctx) -> String {
     }
 }
 
-fn users_text(g: &Value, me: &str) -> Vec<Span<'static>> {
-    let mut agg: Vec<(String, String, f64)> = Vec::new(); // (user, label, mem)
+fn users_text(v: &View, g: &Value, ctx: &Ctx) -> Vec<Span<'static>> {
+    // (user, label, mem, idle for, suspicious)
+    let mut agg: Vec<(String, String, f64, Option<std::time::Duration>, bool)> = Vec::new();
+    let index = g["index"].as_u64().unwrap_or(0);
     for p in busy_procs(g) {
         let label = proc_owner(p);
         let mem = num(p, "mem").unwrap_or(0.0);
+        let idle = held_idle_for(v, ctx, index, p["pid"].as_u64().unwrap_or(0));
+        let odd = suspicious(p);
         match agg.iter_mut().find(|a| a.1 == label) {
-            Some(a) => a.2 += mem,
-            None => agg.push((text(p, "user").unwrap_or("?").to_string(), label, mem)),
+            Some(a) => {
+                a.2 += mem;
+                a.3 = a.3.max(idle);
+                a.4 |= odd;
+            }
+            None => agg.push((
+                text(p, "user").unwrap_or("?").to_string(),
+                label,
+                mem,
+                idle,
+                odd,
+            )),
         }
     }
     agg.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
     let mut out = Vec::new();
-    for (i, (user, label, mem)) in agg.into_iter().enumerate() {
+    for (i, (user, label, mem, idle, odd)) in agg.into_iter().enumerate() {
         if i > 0 {
             out.push(Span::raw("  "));
         }
-        out.push(Span::styled(label, user_style(&user, me)));
+        out.push(Span::styled(label, user_style(&user, &ctx.me)));
         out.push(Span::styled(format!(" {}", gib(Some(mem))), dim()));
+        if let Some(d) = idle {
+            out.push(Span::styled(
+                format!(" idle {}", fmt_age(d.as_secs_f64())),
+                Style::new().fg(Color::Yellow),
+            ));
+        }
+        if odd {
+            out.push(Span::styled(
+                " ⚠ miner?",
+                Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ));
+        }
+    }
+    if let Some(left) = unaccounted_mib(g) {
+        out.push(Span::styled(
+            format!("  +{} unaccounted", gib(Some(left))),
+            Style::new().fg(Color::Yellow),
+        ));
     }
     out
 }
@@ -460,7 +615,7 @@ pub fn server_panel(v: &View, ctx: &Ctx, width: u16) -> Panel {
         )));
     } else {
         lines.push(Line::default());
-        lines.extend(gpu_table(d, gpus, inner, ctx));
+        lines.extend(gpu_table(v, d, gpus, inner, ctx));
         if ctx.procs {
             let pl = proc_table(d, gpus, inner, ctx);
             if pl.len() > 2 {
@@ -470,7 +625,11 @@ pub fn server_panel(v: &View, ctx: &Ctx, width: u16) -> Panel {
         }
     }
 
-    let n_idle = gpus.iter().filter(|g| gpu_is_idle(g)).count();
+    let n_idle = gpus
+        .iter()
+        .filter(|g| gpu_is_idle(g) && claims_on(d, g["index"].as_u64().unwrap_or(0)).is_empty())
+        .count();
+    let n_claimed = gpus.iter().filter(|g| gpu_is_idle(g)).count() - n_idle;
     let mut sub = Vec::new();
     if !gpus.is_empty() {
         let style = if n_idle > 0 {
@@ -482,6 +641,12 @@ pub fn server_panel(v: &View, ctx: &Ctx, width: u16) -> Panel {
             format!(" {} GPUs · {} idle", gpus.len(), n_idle),
             style,
         ));
+        if n_claimed > 0 {
+            sub.push(Span::styled(
+                format!(" · {} claimed", n_claimed),
+                Style::new().fg(Color::Cyan),
+            ));
+        }
         let lost = gpus
             .iter()
             .filter(|g| g["invalid"].as_bool().unwrap_or(false))
@@ -523,7 +688,7 @@ pub fn server_panel(v: &View, ctx: &Ctx, width: u16) -> Panel {
     }
 }
 
-fn gpu_table(_d: &Value, gpus: &[Value], width: usize, ctx: &Ctx) -> Vec<Line<'static>> {
+fn gpu_table(v: &View, d: &Value, gpus: &[Value], width: usize, ctx: &Ctx) -> Vec<Line<'static>> {
     let show_power = width >= 100;
     let show_fan = width >= 84
         && gpus
@@ -636,14 +801,26 @@ fn gpu_table(_d: &Value, gpus: &[Value], width: usize, ctx: &Ctx) -> Vec<Line<'s
                 Style::new().fg(Color::Cyan),
             ));
         }
+        let claims = claims_on(d, g["index"].as_u64().unwrap_or(0));
         let users = if !busy_procs(g).is_empty() {
-            users_text(g, &ctx.me)
+            let mut u = users_text(v, g, ctx);
+            u.extend(claim_spans(&claims, &ctx.me, "  · claimed: "));
+            u
+        } else if !claims.is_empty() {
+            claim_spans(&claims, &ctx.me, "claimed: ")
         } else if g["procs_supported"] == Value::Bool(false) {
             st("process info N/A", dim())
         } else if idle {
             st("idle", Style::new().fg(Color::Green))
         } else {
-            st("-", dim())
+            let mut u = st("-", dim());
+            if let Some(left) = unaccounted_mib(g) {
+                u.push(Span::styled(
+                    format!("  {} unaccounted", gib(Some(left))),
+                    Style::new().fg(Color::Yellow),
+                ));
+            }
+            u
         };
         let mut row = vec![
             st(
@@ -831,14 +1008,30 @@ pub fn user_summary(views: &[View], ctx: &Ctx, width: u16) -> Panel {
                     .unwrap_or(std::cmp::Ordering::Equal),
             )
     });
-    let mut t = Table::new(&[
-        ("User", 14, false),
-        ("GPUs", 4, true),
-        ("GPU mem", 8, true),
+    // GPU memory each user holds without computing (live view, past --idle-after)
+    let mut held: BTreeMap<String, f64> = BTreeMap::new();
+    for v in views {
+        let Some(d) = &v.data else { continue };
+        for g in arr(d, "gpus") {
+            let index = g["index"].as_u64().unwrap_or(0);
+            for p in busy_procs(g) {
+                if held_idle_for(v, ctx, index, p["pid"].as_u64().unwrap_or(0)).is_some() {
+                    *held.entry(proc_owner(p)).or_default() += num(p, "mem").unwrap_or(0.0);
+                }
+            }
+        }
+    }
+    let mut cols = vec![("User", 14, false), ("GPUs", 4, true), ("GPU mem", 8, true)];
+    if !held.is_empty() {
+        cols.push(("Held idle", 9, true));
+    }
+    cols.extend([
         ("Where  server[gpu idx]", 10, false),
         ("CPU cores", 9, true),
         ("RAM", 7, true),
     ]);
+    let flex = cols.len() - 3;
+    let mut t = Table::new(&cols);
     for (user, e) in rows.into_iter().take(20) {
         let (base, _) = user.split_once('@').unwrap_or((user, ""));
         let where_: String = e
@@ -858,18 +1051,33 @@ pub fn user_summary(views: &[View], ctx: &Ctx, width: u16) -> Panel {
             })
             .collect();
         let in_ctr = user.contains('@'); // CPU/RAM of containerised jobs belong to the host-side user
-        t.row(vec![
+        let over = ctx.max_gpus.is_some_and(|m| e.gpus > m && !in_ctr);
+        let gpus_cell = if e.gpus == 0 {
+            s("-")
+        } else if over {
+            st(
+                format!("{} !", e.gpus),
+                Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )
+        } else {
+            s(e.gpus.to_string())
+        };
+        let mut row = vec![
             st(user.clone(), user_style(base, &ctx.me)),
-            s(if e.gpus > 0 {
-                e.gpus.to_string()
-            } else {
-                "-".into()
-            }),
+            gpus_cell,
             s(if e.gpus > 0 {
                 gib(Some(e.gpu_mem))
             } else {
                 "-".into()
             }),
+        ];
+        if !held.is_empty() {
+            row.push(match held.get(user.as_str()) {
+                Some(m) => st(gib(Some(*m)), Style::new().fg(Color::Yellow)),
+                None => s("-"),
+            });
+        }
+        row.extend(vec![
             s(where_),
             s(if in_ctr {
                 "-".into()
@@ -882,10 +1090,15 @@ pub fn user_summary(views: &[View], ctx: &Ctx, width: u16) -> Panel {
                 format!("{:.0}G", e.ram_kb / 1048576.0)
             }),
         ]);
+        t.row(row);
     }
+    let title = match ctx.max_gpus {
+        Some(m) => format!(" Users across all servers · limit {} GPUs each ", m),
+        None => " Users across all servers ".into(),
+    };
     Panel {
-        lines: t.lines(width.saturating_sub(4) as usize, 3),
-        title: Line::from(Span::styled(" Users across all servers ", bold())),
+        lines: t.lines(width.saturating_sub(4) as usize, flex),
+        title: Line::from(Span::styled(title, bold())),
         subtitle: Line::default(),
         border: Style::new().fg(GREY),
     }
@@ -999,7 +1212,7 @@ pub fn compact_lines(views: &[View], ctx: &Ctx, width: u16) -> Vec<Line<'static>
         }
         let idle: Vec<String> = gpus
             .iter()
-            .filter(|g| gpu_is_idle(g))
+            .filter(|g| gpu_is_idle(g) && claims_on(d, g["index"].as_u64().unwrap_or(0)).is_empty())
             .map(|g| g["index"].as_u64().unwrap_or(0).to_string())
             .collect();
         let mem = &d["mem"];
@@ -1037,7 +1250,18 @@ pub fn header(views: &[View], interval: f64, short: bool) -> Line<'static> {
         .filter_map(|v| v.data.as_ref())
         .flat_map(|d| arr(d, "gpus"))
         .collect();
-    let idle = gpus.iter().filter(|g| gpu_is_idle(g)).count();
+    let idle: usize = views
+        .iter()
+        .filter_map(|v| v.data.as_ref())
+        .map(|d| {
+            arr(d, "gpus")
+                .iter()
+                .filter(|g| {
+                    gpu_is_idle(g) && claims_on(d, g["index"].as_u64().unwrap_or(0)).is_empty()
+                })
+                .count()
+        })
+        .sum();
     let up = views.iter().filter(|v| v.ok()).count();
     let idle_style = if idle > 0 {
         Style::new().fg(Color::Green).add_modifier(Modifier::BOLD)
@@ -1213,6 +1437,90 @@ pub fn to_ansi(buf: &Buffer, color: bool) -> String {
     out
 }
 
+/// A buffer as a standalone HTML page (for `once --html`, e.g. from cron into a web dir).
+pub fn to_html(buf: &Buffer, refresh: Option<u64>) -> String {
+    let mut body = String::new();
+    for y in 0..buf.area.height {
+        let mut cur: Option<Style> = None;
+        let mut line = String::new();
+        for x in 0..buf.area.width {
+            let cell = &buf[(x, y)];
+            let style = cell.style();
+            if cur != Some(style) {
+                if cur.is_some() {
+                    line.push_str("</span>");
+                }
+                line.push_str(&format!("<span style=\"{}\">", css(style)));
+                cur = Some(style);
+            }
+            match cell.symbol() {
+                "<" => line.push_str("&lt;"),
+                ">" => line.push_str("&gt;"),
+                "&" => line.push_str("&amp;"),
+                sym => line.push_str(sym),
+            }
+        }
+        if cur.is_some() {
+            line.push_str("</span>");
+        }
+        body.push_str(line.trim_end());
+        body.push('\n');
+    }
+    let meta = refresh
+        .map(|r| format!("<meta http-equiv=\"refresh\" content=\"{}\">", r))
+        .unwrap_or_default();
+    format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\">{}<title>gpuwho</title>\
+<style>body{{background:#1e1e2e;color:#cdd6f4;margin:0;padding:16px}}pre{{font:13px/1.25 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;margin:0}}</style>\
+</head><body><pre>{}</pre></body></html>\n",
+        meta, body
+    )
+}
+
+fn hex(c: Color) -> Option<&'static str> {
+    Some(match c {
+        Color::Black => "#45475a",
+        Color::Red | Color::LightRed => "#f38ba8",
+        Color::Green | Color::LightGreen => "#a6e3a1",
+        Color::Yellow | Color::LightYellow => "#f9e2af",
+        Color::Blue | Color::LightBlue => "#89b4fa",
+        Color::Magenta | Color::LightMagenta => "#f5c2e7",
+        Color::Cyan | Color::LightCyan => "#94e2d5",
+        Color::White | Color::Gray => "#bac2de",
+        Color::DarkGray => "#585b70",
+        Color::Indexed(214) => "#fab387",
+        Color::Indexed(170) => "#cba6f7",
+        Color::Indexed(45) => "#89dceb",
+        Color::Indexed(220) => "#f9e2af",
+        Color::Indexed(209) => "#eba0ac",
+        Color::Indexed(47) => "#a6e3a1",
+        Color::Indexed(39) => "#74c7ec",
+        Color::Indexed(205) => "#f5c2e7",
+        Color::Indexed(228) => "#f9e2af",
+        Color::Indexed(219) => "#f2cdcd",
+        Color::Indexed(244) => "#9399b2",
+        Color::Indexed(240) => "#45475a",
+        _ => return None,
+    })
+}
+
+fn css(s: Style) -> String {
+    let mut out = String::new();
+    if let Some(c) = s.fg.and_then(hex) {
+        out.push_str(&format!("color:{};", c));
+    }
+    if let Some(c) = s.bg.and_then(hex) {
+        out.push_str(&format!("background:{};", c));
+    }
+    if s.add_modifier.contains(Modifier::BOLD) {
+        out.push_str("font-weight:bold;");
+    }
+    if s.add_modifier.contains(Modifier::UNDERLINED) {
+        out.push_str("text-decoration:underline;");
+    }
+    out
+}
+
 fn sgr(s: Style) -> String {
     let mut codes = vec!["0".to_string()];
     if s.add_modifier.contains(Modifier::BOLD) {
@@ -1275,13 +1583,7 @@ mod tests {
     }
 
     fn ctx() -> Ctx {
-        Ctx {
-            live: true,
-            interval: 3.0,
-            procs: true,
-            me: "nobody".into(),
-            now: Instant::now(),
-        }
+        Ctx::new(true, 3.0, true, "nobody".into())
     }
 
     fn plain(buf: &Buffer) -> String {

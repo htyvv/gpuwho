@@ -1,5 +1,6 @@
 //! What the UI knows about each server, updated by its poller.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -22,6 +23,9 @@ pub struct View {
     pub blocked: bool,
     /// which agent answered: "rust" or "python"
     pub agent: Option<String>,
+    /// (gpu, pid) -> since when that process has held >= 1 GiB without computing,
+    /// as seen by this client (the servers keep no history)
+    pub held_idle: HashMap<(u64, u64), Instant>,
 }
 
 pub type Shared = Arc<Mutex<View>>;
@@ -59,6 +63,32 @@ impl View {
         self.data.is_some() && self.error.is_none()
     }
 
+    /// A process "holds idle" when it has >= 1 GiB on a GPU and isn't computing: its own SM%
+    /// under 5 when the agent measured it, else the GPU's load under 5% with it as the only job.
+    fn track_idle(&mut self, d: &Value, now: Instant) {
+        let mut seen = HashMap::new();
+        for g in d["gpus"].as_array().into_iter().flatten() {
+            let index = g["index"].as_u64().unwrap_or(0);
+            let busy = crate::render::busy_procs(g);
+            let gpu_util = g["util"].as_f64();
+            for p in &busy {
+                let pid = p["pid"].as_u64().unwrap_or(0);
+                if p["mem"].as_f64().unwrap_or(0.0) < 1024.0 {
+                    continue;
+                }
+                let idle = match p["sm"].as_f64() {
+                    Some(sm) => sm < 5.0,
+                    None => busy.len() == 1 && gpu_util.is_some_and(|u| u < 5.0),
+                };
+                if idle {
+                    let since = self.held_idle.get(&(index, pid)).copied().unwrap_or(now);
+                    seen.insert((index, pid), since);
+                }
+            }
+        }
+        self.held_idle = seen;
+    }
+
     pub fn apply(&mut self, out: Outcome, started: Instant, jitter: f64) {
         let now = Instant::now();
         match out {
@@ -67,6 +97,7 @@ impl View {
                     .as_str()
                     .map(str::to_string)
                     .or(Some("python".into()));
+                self.track_idle(&v, now);
                 self.data = Some(v);
                 self.error = None;
                 self.updated = Some(now);
@@ -111,6 +142,24 @@ pub fn jitter() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn held_idle_tracking() {
+        let mut v = View::new("x", "h");
+        let gpu = |util: u64, mem: f64| {
+            serde_json::json!({"gpus": [{"index": 0, "util": util, "mem_used": mem,
+            "procs": [{"pid": 7, "mem": mem, "type": "C"}]}]})
+        };
+        let t0 = Instant::now();
+        v.apply(Outcome::Data(gpu(0, 20000.0)), t0, 1.0);
+        let since = v.held_idle[&(0, 7)];
+        v.apply(Outcome::Data(gpu(0, 20000.0)), t0, 1.0);
+        assert_eq!(v.held_idle[&(0, 7)], since); // still counting from the first time
+        v.apply(Outcome::Data(gpu(90, 20000.0)), t0, 1.0);
+        assert!(v.held_idle.is_empty()); // computing again
+        v.apply(Outcome::Data(gpu(0, 500.0)), t0, 1.0);
+        assert!(v.held_idle.is_empty()); // too small to matter
+    }
 
     #[test]
     fn backoff_and_blocking() {

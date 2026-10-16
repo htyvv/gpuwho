@@ -1,0 +1,13 @@
+[package]
+name = "gpuwho-agent"
+description = "The part of gpuwho that runs on each server: reads /proc, cgroups and NVML, answers one JSON line per request"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+libc = "0.2"
+libloading = "0.9"
+serde_json = "1"

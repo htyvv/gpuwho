@@ -92,17 +92,20 @@ def proc_stats(pids=None):
 _uid_cache = {}
 
 
-def owner(pid):
-    try:
-        uid = os.stat("/proc/%d" % pid).st_uid
-    except OSError:
-        return None
+def owner_name(uid):
     if uid not in _uid_cache:
         try:
             _uid_cache[uid] = pwd.getpwuid(uid).pw_name
         except KeyError:
             _uid_cache[uid] = str(uid)
     return _uid_cache[uid]
+
+
+def owner(pid):
+    try:
+        return owner_name(os.stat("/proc/%d" % pid).st_uid)
+    except OSError:
+        return None
 
 
 def container_id(cgroup):
@@ -551,6 +554,40 @@ class Nvml:
         return box["gpus"], self.error
 
 
+# ---------------------------------------------------------------- claims
+
+CLAIMS_DIR = "/var/tmp/gpuwho-claims"
+
+
+def read_claims(now=None, directory=CLAIMS_DIR):
+    """Soft reservations (`gpuwho claim`): one JSON file per user in a sticky world-writable
+    directory. The owner is the file's owner, not its name, so nobody can claim as someone else."""
+    now = time.time() if now is None else now
+    out = []
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return out
+    for name in names:
+        if not name.endswith(".json"):
+            continue
+        path = os.path.join(directory, name)
+        try:
+            uid = os.stat(path).st_uid
+            doc = json.loads(read(path) or "{}")
+        except (OSError, ValueError):
+            continue
+        user = owner_name(uid)
+        for c in doc.get("claims", []) if isinstance(doc, dict) else []:
+            try:
+                if float(c["until"]) > now:
+                    out.append({"user": user, "gpus": [int(g) for g in c["gpus"]], "until": float(c["until"]),
+                                "since": c.get("since"), "note": str(c.get("note") or "")[:200]})
+            except (KeyError, TypeError, ValueError):
+                continue
+    return out
+
+
 # ---------------------------------------------------------------- sampling
 
 def significant(pct, rss_pages):
@@ -620,7 +657,8 @@ class Sampler:
                 try:
                     user = owner(pid)
                     p.update(user=user, cpu=per_pid_cpu.get(pid), container=container_of(pid), cmd=cmdline(pid),
-                             rss_kb=p1[pid][2] * PAGE_KB if pid in p1 else None, state=proc_state(pid, p1, user))
+                             rss_kb=p1[pid][2] * PAGE_KB if pid in p1 else None, state=proc_state(pid, p1, user),
+                             start=p1[pid][3] if pid in p1 else None)
                 except Exception as e:  # one odd process must not blank the whole server
                     p.setdefault("state", "error: %s" % e)
 
@@ -651,7 +689,9 @@ class Sampler:
             "nvml": self.nvml.status,
             "driver": self.nvml.driver,
             "cuda": self.nvml.cuda,
-            "agent": {"pid": os.getpid(), "full_scan": full},
+            "claims": read_claims(),
+            "clk_tck": CLK_TCK,
+            "agent": {"pid": os.getpid(), "full_scan": full, "impl": "python"},
         }
 
 

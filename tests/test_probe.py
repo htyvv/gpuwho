@@ -1,12 +1,25 @@
+"""Tests for the Python fallback agent (crates/gpuwho/assets/probe.py).
+
+It is piped to servers whose python3 may be as old as 3.6, so it stays stdlib-only;
+CI also runs it in python:3.6/3.7/3.8 containers.
+"""
+import importlib.util
 import json
+import os
+import pathlib
 import subprocess
 import sys
 
 import pytest
 
-from gpuwho import probe
-from gpuwho.remote import PROBE
-from tests.conftest import linux_only
+PATH = pathlib.Path(__file__).resolve().parent.parent / "crates" / "gpuwho" / "assets" / "probe.py"
+PROBE = PATH.read_text()
+_spec = importlib.util.spec_from_file_location("probe", str(PATH))
+probe = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(probe)
+
+# the agent reads /proc, so anything that actually runs it needs Linux
+linux_only = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="agent reads /proc")
 
 
 @pytest.mark.parametrize("cgroup, expected", [
@@ -160,3 +173,19 @@ def test_nvml_absent_without_library(monkeypatch):
     n = probe.Nvml()
     assert n.query() == ([], None) and n.status == "absent"
     assert n.retry_at > 0  # tried again later, e.g. after the driver is installed
+
+
+def test_read_claims_trusts_the_file_owner(tmp_path):
+    (tmp_path / "bob.json").write_text(json.dumps({"claims": [
+        {"gpus": [0, 1], "until": 2000, "note": "rebuttal"}, {"gpus": [2], "until": 500}]}))
+    (tmp_path / "junk.json").write_text("not json")
+    got = probe.read_claims(now=1000, directory=str(tmp_path))
+    assert len(got) == 1 and got[0]["gpus"] == [0, 1] and got[0]["note"] == "rebuttal"
+    assert got[0]["user"] == probe.owner_name(os.getuid())  # not "bob": whoever owns the file
+
+
+@linux_only
+def test_sample_reports_claims_and_start_times():
+    snap = probe.Sampler().sample()
+    assert isinstance(snap["claims"], list) and snap["clk_tck"] > 0
+    assert snap["agent"]["impl"] == "python"

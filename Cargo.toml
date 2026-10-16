@@ -1,0 +1,20 @@
+[workspace]
+members = ["crates/agent", "crates/gpuwho"]
+resolver = "2"
+
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/htyvv/gpuwho"
+authors = ["Taeyeong Heo"]
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+
+# the agent is shipped to every server: keep it small
+[profile.release.package.gpuwho-agent]
+opt-level = "s"

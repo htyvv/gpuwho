@@ -13,3 +13,6 @@ htmlcov/
 # your server list holds passwords; it lives in ~/.config/gpuwho, never here
 servers.json
 known_hosts
+
+# Rust
+target/

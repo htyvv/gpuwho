@@ -9,3 +9,12 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: ci
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      crates:
+        patterns: ["*"]
+    commit-message:
+      prefix: deps

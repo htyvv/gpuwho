@@ -1,7 +1,8 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
 
+# The Python package is just the Rust binary (like ruff or uv): `pipx install gpuwho`.
 [project]
 name = "gpuwho"
 dynamic = ["version"]
@@ -10,25 +11,21 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Taeyeong Heo" }]
-requires-python = ">=3.9"
-dependencies = [
-    "rich>=12.0",
-    "paramiko>=2.10",
-]
+requires-python = ">=3.8"
 keywords = [
     "gpu", "nvidia", "nvidia-smi", "nvml", "gpustat", "gpu-monitoring", "ssh", "cluster",
-    "multi-server", "monitoring", "tui", "terminal", "deep-learning", "lab", "htop",
+    "multi-server", "monitoring", "tui", "terminal", "deep-learning", "lab", "htop", "mcp",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Science/Research",
     "Intended Audience :: System Administrators",
     "Intended Audience :: Developers",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Rust",
     "Topic :: System :: Monitoring",
     "Topic :: System :: Clustering",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -41,30 +38,18 @@ Source = "https://github.com/htyvv/gpuwho"
 Issues = "https://github.com/htyvv/gpuwho/issues"
 Changelog = "https://github.com/htyvv/gpuwho/blob/main/CHANGELOG.md"
 
-[project.scripts]
-gpuwho = "gpuwho.cli:main"
-
-[tool.hatch.version]
-path = "gpuwho/__init__.py"
-
-[tool.hatch.build.targets.wheel]
-packages = ["gpuwho"]
-
-[tool.hatch.build.targets.sdist]
-include = ["gpuwho", "tests", "README.md", "CHANGELOG.md", "LICENSE"]
+[tool.maturin]
+bindings = "bin"
+manifest-path = "crates/gpuwho/Cargo.toml"
+strip = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
 addopts = ["-ra"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py39"
+target-version = "py37"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "B", "I"]
-
-[tool.ruff.lint.per-file-ignores]
-# the agent is piped to servers that may only have Python 3.6
-"gpuwho/probe.py" = ["B"]
+select = ["E", "F", "W", "I"]

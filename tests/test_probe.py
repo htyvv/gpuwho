@@ -107,3 +107,56 @@ def test_split_by_rss():
     }
     assert probe.split_by_rss(groups, charged) == {"alice": 10 * 1024, "root": 2000, "bob": 1000,
                                                     "carol": 700, "dave": 500}
+
+
+def test_read_survives_non_utf8(tmp_path):
+    f = tmp_path / "cmdline"
+    f.write_bytes(b"python\x00\xbd\xc7\xc7\xe8.py\x00")  # CP949 bytes in argv
+    assert probe.read(str(f)).startswith("python\x00")
+    assert probe.read(str(tmp_path / "missing")) == ""
+
+
+def test_merge_procs_mps_duplicates_stay_compute():
+    procs = probe.merge_procs([(7, 10.0), (7, 10.0)], [])
+    assert procs == [{"pid": 7, "mem": 10.0, "type": "C"}]
+
+
+def test_average_sm():
+    samples = [(1, 100, 80), (1, 200, 60), (2, 150, 0), (2, 50, 90), (3, 300, 4294967295)]
+    sm, newest = probe.average_sm(samples, since=60)
+    assert sm == {1: 70, 2: 0}  # pid 2's old sample and pid 3's garbage value are dropped
+    assert newest == 200
+
+
+def test_proc_state():
+    stats = {10: ("S", 1, 1, 1), 11: ("Z", 1, 1, 1), 12: ("D", 1, 1, 1)}
+    assert probe.proc_state(10, stats, "alice") is None
+    assert probe.proc_state(10, stats, None) == "hidden"
+    assert probe.proc_state(11, stats, "alice") == "zombie"
+    assert probe.proc_state(12, stats, "alice") == "D"
+    assert probe.proc_state(99, stats, None) == "gone"
+
+
+@linux_only
+def test_proc_stats_reads_own_process():
+    import os
+    stats = probe.proc_stats()
+    state, ticks, rss, start = stats[os.getpid()]
+    assert state in "RSD" and rss > 0 and start > 0
+    assert set(probe.proc_stats([str(os.getpid()), "999999999"])) == {os.getpid()}
+
+
+@linux_only
+def test_partial_scans_between_full_ones():
+    s = probe.Sampler()
+    flags = [s.sample()["agent"]["full_scan"] for _ in range(probe.FULL_SCAN_EVERY + 1)]
+    assert flags == [True] + [False] * (probe.FULL_SCAN_EVERY - 1) + [True]
+
+
+def test_nvml_absent_without_library(monkeypatch):
+    def no_lib(name):
+        raise OSError("libnvidia-ml.so.1: cannot open shared object file")
+    monkeypatch.setattr(probe.ctypes, "CDLL", no_lib)
+    n = probe.Nvml()
+    assert n.query() == ([], None) and n.status == "absent"
+    assert n.retry_at > 0  # tried again later, e.g. after the driver is installed

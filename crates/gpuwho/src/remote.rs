@@ -759,15 +759,21 @@ fn write_local_agent(bin: &[u8]) -> std::io::Result<PathBuf> {
         .filter(|d| d.is_dir())
         .unwrap_or_else(|| config::dir().join("cache"));
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("gpuwho-agent-{}-local", env!("CARGO_PKG_VERSION")));
-    if std::fs::metadata(&path)
-        .map(|m| m.len() as usize != bin.len())
-        .unwrap_or(true)
-    {
+    let name =
+        agents::local_name().ok_or_else(|| std::io::Error::other("no agent for this machine"))?;
+    let path = dir.join(&name);
+    if !path.exists() {
         let tmp = path.with_extension(format!("{}", std::process::id()));
         std::fs::write(&tmp, bin)?;
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o700))?;
         std::fs::rename(&tmp, &path)?;
+        // older agents of ours in the same directory
+        for e in std::fs::read_dir(&dir)?.flatten() {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if n.starts_with("gpuwho-agent-") && n != name {
+                let _ = std::fs::remove_file(e.path());
+            }
+        }
     }
     Ok(path)
 }

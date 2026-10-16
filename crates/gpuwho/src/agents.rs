@@ -82,13 +82,24 @@ true"#,
 }
 
 /// Reads the (gzip or raw) agent from stdin into `dir/name`, atomically.
+/// Reads the (gzip or raw) agent from stdin into `dir/name` atomically, then removes the
+/// caller's older agents from that directory, so upgrades don't pile up files.
 pub fn upload_script(dir: &str, name: &str, gzip: bool) -> String {
     let f = shell_quote(&format!("{}/{}", dir, name));
     format!(
-        "umask 077; t={f}.$$; {} > \"$t\" && chmod 700 \"$t\" && mv -f \"$t\" {f} && echo ok",
+        "umask 077; t={f}.$$; {} > \"$t\" && chmod 700 \"$t\" && mv -f \"$t\" {f} && echo ok && \
+         for o in {d}/gpuwho-agent-*; do [ \"$o\" = {f} ] || {{ [ -O \"$o\" ] && rm -f \"$o\"; }}; done; true",
         if gzip { "gzip -dc" } else { "cat" },
-        f = f
+        f = f,
+        d = shell_quote(dir)
     )
+}
+
+/// The file name the agent for this machine gets (for `local` servers).
+#[cfg_attr(not(unix), allow(dead_code))]
+pub fn local_name() -> Option<String> {
+    let arch = std::env::consts::ARCH;
+    embedded(arch).map(|(_, tag)| file_name(arch, tag))
 }
 
 pub fn rust_command(dir: &str, name: &str, idle: u64) -> String {
@@ -136,6 +147,47 @@ mod tests {
     fn quoting() {
         assert_eq!(shell_quote("it's"), "'it'\\''s'");
         assert_eq!(sh("echo 'a'"), "sh -c 'echo '\\''a'\\'''");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn upload_replaces_older_agents() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("gpuwho-upload-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for old in [
+            "gpuwho-agent-0.9.0-x86_64-aaaaaa",
+            "gpuwho-agent-1.0.0-dev-local",
+            "unrelated",
+        ] {
+            std::fs::write(dir.join(old), b"old").unwrap();
+        }
+        let script = upload_script(
+            dir.to_str().unwrap(),
+            "gpuwho-agent-1.0.0-x86_64-bbbbbb",
+            false,
+        );
+        let mut child = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&script)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child.stdin.take().unwrap().write_all(b"new agent").unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+        let mut left: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        left.sort();
+        assert_eq!(left, vec!["gpuwho-agent-1.0.0-x86_64-bbbbbb", "unrelated"]);
+        assert_eq!(
+            std::fs::read(dir.join("gpuwho-agent-1.0.0-x86_64-bbbbbb")).unwrap(),
+            b"new agent"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

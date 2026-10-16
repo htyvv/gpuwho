@@ -84,12 +84,14 @@ impl Owners {
 
     pub fn of(&mut self, pid: u32) -> Option<String> {
         let uid = fs::metadata(format!("/proc/{}", pid)).ok()?.uid();
-        Some(
-            self.names
-                .entry(uid)
-                .or_insert_with(|| user_name(uid))
-                .clone(),
-        )
+        Some(self.name(uid))
+    }
+
+    pub fn name(&mut self, uid: u32) -> String {
+        self.names
+            .entry(uid)
+            .or_insert_with(|| user_name(uid))
+            .clone()
     }
 }
 

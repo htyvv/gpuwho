@@ -10,9 +10,9 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Map, Value};
 
-use crate::memcg;
 use crate::nvml::Worker;
 use crate::procfs::{self, Owners, Stat};
+use crate::{claims, memcg};
 
 pub const FULL_SCAN_EVERY: u64 = 5;
 const FIRST_SAMPLE: std::time::Duration = std::time::Duration::from_millis(500);
@@ -208,6 +208,11 @@ impl Sampler {
             .split_ascii_whitespace()
             .next()
             .and_then(|x| x.parse::<f64>().ok());
+        let now_wall = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
+        let claims = claims::read(claims::DIR, now_wall, &mut |uid| self.owners.name(uid));
         let mut users: Vec<Value> = users.into_values().map(Value::Object).collect();
         users.sort_by(|a, b| {
             b["cpu"]
@@ -218,7 +223,7 @@ impl Sampler {
 
         json!({
             "hostname": procfs::read("/proc/sys/kernel/hostname").trim(),
-            "time": SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0),
+            "time": now_wall,
             "uptime": uptime,
             "cpu": {"count": self.ncpu, "usage": (cpu_usage * 10.0).round() / 10.0, "load": load, "model": self.model},
             "mem": {"total_kb": mem("MemTotal"), "avail_kb": mem("MemAvailable")},
@@ -229,6 +234,7 @@ impl Sampler {
             "driver": reading.driver,
             "cuda": reading.cuda,
             "clk_tck": self.clk_tck,
+            "claims": claims,
             "agent": {"pid": std::process::id(), "full_scan": full, "impl": "rust", "version": env!("CARGO_PKG_VERSION")},
         })
     }

@@ -4,6 +4,7 @@
 //! the same document the Python fallback agent (probe.py) produces. It exits on stdin EOF
 //! (client gone), after IDLE_SEC without a request, or after six hours.
 
+mod claims;
 mod memcg;
 mod nvml;
 mod procfs;

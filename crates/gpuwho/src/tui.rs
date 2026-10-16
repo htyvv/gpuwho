@@ -81,6 +81,8 @@ pub fn spawn(
 pub struct App {
     pub interval: f64,
     pub procs: bool,
+    pub idle_after: Duration,
+    pub max_gpus: Option<usize>,
     pub compact: Option<bool>, // None: automatic
     showing_compact: bool,
     offset: u16,
@@ -101,6 +103,8 @@ impl App {
         App {
             interval,
             procs,
+            idle_after: Duration::from_secs(30 * 60),
+            max_gpus: None,
             compact,
             showing_compact: false,
             offset: 0,
@@ -158,13 +162,9 @@ impl App {
         area: Rect,
         buf: &mut ratatui::buffer::Buffer,
     ) {
-        let ctx = Ctx {
-            live: true,
-            interval: self.interval,
-            procs: self.procs,
-            me: me.to_string(),
-            now: Instant::now(),
-        };
+        let mut ctx = Ctx::new(true, self.interval, self.procs, me.to_string());
+        ctx.idle_after = self.idle_after;
+        ctx.max_gpus = self.max_gpus;
         let rows = area.height.saturating_sub(1).max(1);
         let mut body = None;
         if self.compact != Some(true) {

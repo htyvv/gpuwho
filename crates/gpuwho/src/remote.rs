@@ -439,7 +439,9 @@ async fn into_agent(
         kind,
         _keep: vec![],
     };
-    io.ready().await?;
+    if kind == "rust" {
+        io.ready().await?; // probe.py only speaks when asked; its errors show on the first request
+    }
     Ok(io)
 }
 
@@ -529,6 +531,49 @@ async fn start_agent(
         })
 }
 
+/// Run a shell script on a server (for claims and kill), feeding `input` on stdin.
+pub async fn exec(
+    cfg: &ServerCfg,
+    script: &str,
+    input: Option<Vec<u8>>,
+) -> Result<(Option<u32>, String), Failure> {
+    if cfg.is_local() {
+        use tokio::io::AsyncReadExt;
+        let mut child = tokio::process::Command::new("sh")
+            .arg("-c")
+            .arg(script)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| Failure::new(e.to_string()))?;
+        let mut stdin = child.stdin.take().unwrap();
+        if let Some(data) = input {
+            stdin.write_all(&data).await.map_err(|e| io_failure(&e))?;
+        }
+        drop(stdin);
+        let mut out = String::new();
+        child
+            .stdout
+            .take()
+            .unwrap()
+            .read_to_string(&mut out)
+            .await
+            .map_err(|e| io_failure(&e))?;
+        let mut err = String::new();
+        let _ = child.stderr.take().unwrap().read_to_string(&mut err).await;
+        let status = child.wait().await.map_err(|e| io_failure(&e))?;
+        return Ok((status.code().map(|c| c as u32), out + &err));
+    }
+    let (handle, _proxy) = connect(cfg).await?;
+    run(
+        &handle,
+        &agents::sh(&format!("exec 2>&1; {}", script)),
+        input.as_deref(),
+    )
+    .await
+}
+
 // ---------------------------------------------------------------- sources
 
 pub struct Remote {
@@ -595,31 +640,40 @@ impl Remote {
 /// `host: local`: the agent as a child process of ours.
 pub struct Local {
     idle: u64,
+    python: bool,
     io: Option<AgentIo>,
 }
 
 impl Local {
-    pub fn new(idle: u64) -> Self {
-        Local { idle, io: None }
+    pub fn new(idle: u64, python: bool) -> Self {
+        Local {
+            idle,
+            python,
+            io: None,
+        }
     }
 
-    async fn spawn(idle: u64) -> Result<AgentIo, Failure> {
-        let (mut cmd, kind) =
-            match agents::local_binary().and_then(|bin| write_local_agent(&bin).ok()) {
-                Some(path) => {
-                    let mut c = tokio::process::Command::new(path);
-                    c.arg(idle.to_string());
-                    (c, "rust")
-                }
-                None => {
-                    let mut c = tokio::process::Command::new("python3");
-                    c.arg("-u")
-                        .arg("-c")
-                        .arg(agents::PROBE_PY)
-                        .arg(idle.to_string());
-                    (c, "python")
-                }
-            };
+    async fn spawn(idle: u64, python: bool) -> Result<AgentIo, Failure> {
+        let rust = if python {
+            None
+        } else {
+            agents::local_binary().and_then(|bin| write_local_agent(&bin).ok())
+        };
+        let (mut cmd, kind) = match rust {
+            Some(path) => {
+                let mut c = tokio::process::Command::new(path);
+                c.arg(idle.to_string());
+                (c, "rust")
+            }
+            None => {
+                let mut c = tokio::process::Command::new("python3");
+                c.arg("-u")
+                    .arg("-c")
+                    .arg(agents::PROBE_PY)
+                    .arg(idle.to_string());
+                (c, "python")
+            }
+        };
         let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -641,7 +695,7 @@ impl Local {
 
     pub async fn poll(&mut self) -> Outcome {
         if self.io.is_none() {
-            match Self::spawn(self.idle).await {
+            match Self::spawn(self.idle, self.python).await {
                 Ok(io) => self.io = Some(io),
                 Err(f) => {
                     return Outcome::Failed {
@@ -709,7 +763,7 @@ pub enum Source {
 impl Source {
     pub fn for_cfg(cfg: &ServerCfg, idle: u64) -> Self {
         if cfg.is_local() {
-            Source::Local(Local::new(idle))
+            Source::Local(Local::new(idle, cfg.agent.as_deref() == Some("python")))
         } else {
             Source::Remote(Box::new(Remote::new(cfg.clone(), idle)))
         }

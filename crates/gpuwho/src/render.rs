@@ -1335,9 +1335,12 @@ fn chrono_like_now(time_only: bool) -> String {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        let (h, m, sec) = (s / 3600 % 24, s / 60 % 60, s % 60);
-        let _ = time_only;
-        format!("{:02}:{:02}:{:02} UTC", h, m, sec)
+        let clock = format!("{:02}:{:02}:{:02}", s / 3600 % 24, s / 60 % 60, s % 60);
+        if time_only {
+            clock // the live header has no room for more
+        } else {
+            clock + " UTC"
+        }
     }
 }
 

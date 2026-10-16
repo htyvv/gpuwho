@@ -1,4 +1,4 @@
-"""Render the README screenshot from tests/fixtures/cluster.json (made-up servers and users).
+"""Render the README screenshot from gpuwho/demo.json (made-up servers and users).
 
     pip install pillow
     python scripts/screenshot.py docs/screenshot.png [--width 236] [--procs]
@@ -9,6 +9,7 @@ Pillow. Box-drawing and block characters are drawn as shapes so they join up cle
 import argparse
 import os
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -17,8 +18,7 @@ from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 from rich.console import Console  # noqa: E402
 from rich.terminal_theme import TerminalTheme  # noqa: E402
 
-from gpuwho import ui  # noqa: E402
-from tests.conftest import load_cluster  # noqa: E402
+from gpuwho import demo, ui  # noqa: E402
 
 # Catppuccin Mocha
 THEME = TerminalTheme(
@@ -45,7 +45,10 @@ def main():
     args = ap.parse_args()
 
     console = Console(width=args.width, force_terminal=True, color_system="truecolor", file=open(os.devnull, "w"))
-    renderable = ui.dashboard(load_cluster(), 3, args.procs, args.width)
+    servers = demo.servers()
+    for s in servers:  # as if just polled, without the demo's random walk
+        s.updated, s.latency = time.time(), 0.4
+    renderable = ui.dashboard(servers, 3, args.procs, args.width)
     lines = console.render_lines(renderable, console.options, pad=True)
 
     regular = ImageFont.truetype(args.font, args.size)

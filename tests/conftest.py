@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
+DEMO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gpuwho", "demo.json")
 
 # the agent reads /proc, so anything that actually runs it needs Linux
 linux_only = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="agent reads /proc")
@@ -25,7 +25,7 @@ class FakeServer:
 
 
 def load_cluster():
-    with open(os.path.join(FIXTURES, "cluster.json")) as f:
+    with open(DEMO) as f:
         return [FakeServer(s["name"], s["host"], s["data"]) for s in json.load(f)["servers"]]
 
 

@@ -9,7 +9,7 @@
 One terminal shows every GPU on every machine, who is using it, and how much.
 Nothing gets installed on the servers: gpuwho copies a 600 KB agent over SSH (or runs a Python one with `python3`) and reads NVML directly.
 
-English | [简体中文](README.zh-CN.md) | [한국어](README.ko.md)
+English | [한국어](README.ko.md) | [简体中文](README.zh-CN.md)
 
 <p align="center">
   <img src="docs/demo.gif" alt="gpuwho live: two servers, sixteen GPUs, jobs finishing and starting, and who holds what" width="100%">

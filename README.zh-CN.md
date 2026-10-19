@@ -8,7 +8,7 @@
 
 走 SSH，服务器上什么都不用装：gpuwho 通过 SSH 拷过去一个 600 KB 的小程序（或者用 `python3` 跑一个 Python 版），直接读 NVML。
 
-[English](README.md) | 简体中文 | [한국어](README.ko.md)
+[English](README.md) | [한국어](README.ko.md) | 简体中文
 
 <p align="center">
   <img src="docs/demo.gif" alt="gpuwho 实时界面：两台服务器、16 张卡，任务结束又开始，每张卡是谁在用" width="100%">

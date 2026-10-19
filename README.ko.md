@@ -9,7 +9,7 @@
 어느 서버의 몇 번 GPU를 누가, 얼마나 쓰고 있는지 터미널 하나에서 봅니다.
 서버에는 아무것도 설치하지 않습니다. 600 KB짜리 에이전트를 SSH로 복사해 두거나(또는 `python3`로 파이썬 에이전트를 돌려서) NVML을 직접 읽습니다.
 
-[English](README.md) | [简体中文](README.zh-CN.md) | 한국어
+[English](README.md) | 한국어 | [简体中文](README.zh-CN.md)
 
 <p align="center">
   <img src="docs/demo.gif" alt="서버 2대, GPU 16장에서 작업이 끝나고 새로 시작되는 모습을 보여주는 gpuwho" width="100%">
